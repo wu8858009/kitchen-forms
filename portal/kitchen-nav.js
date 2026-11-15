@@ -14,7 +14,7 @@
   a.innerHTML = '<span>⌂</span>首頁';
   a.addEventListener('click', async (e) => {
     e.preventDefault();
-    const m = window.__fridge || window.__dish || window.__meal;
+    const m = window.__fridge || window.__dish || window.__meal || window.__prep;
     try { if (m && m.flush) await Promise.race([m.flush(), new Promise((r) => setTimeout(r, 3000))]); } catch (err) { /* 照樣回首頁 */ }
     location.href = home;
   });

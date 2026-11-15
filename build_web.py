@@ -13,8 +13,9 @@ MODULES = {
     "fridge": VSCODE / "冰箱溫度記錄表系統" / "web",
     "dish": VSCODE / "菜品銷售紀錄系統" / "web",
     "meal": VSCODE / "員工餐金額總計" / "web",
+    "prep": ROOT / "prep",
 }
-NAV_TAG = '<script src="../kitchen-nav.js?v=2"></script>'
+NAV_TAG = '<script src="../kitchen-nav.js?v=3"></script>'
 
 
 def build(out: Path = ROOT / "site") -> Path:

@@ -1,7 +1,7 @@
 :root {
   --nav: #0b1a33; --nav-2: #13294b; --bg: #edf1f7; --card: #fff; --ink: #0f172a; --muted: #64748b; --line: #dbe3ee;
   --brand: #1d4ed8; --ok: #16a34a; --warn: #d97706; --bad: #dc2626;
-  --fridge: #0891b2; --dish: #c2410c; --meal: #7c3aed;
+  --fridge: #0891b2; --dish: #c2410c; --meal: #7c3aed; --prep: #059669;
   --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
 }
 * { box-sizing: border-box; }
@@ -30,7 +30,7 @@ button { font: inherit; cursor: pointer; }
   background: var(--card); border-radius: 14px; box-shadow: 0 1px 3px rgba(15, 23, 42, .08), 0 6px 18px rgba(15, 23, 42, .05);
   display: flex; flex-direction: column; overflow: hidden; border-top: 5px solid var(--c);
 }
-.card.fridge { --c: var(--fridge); } .card.dish { --c: var(--dish); } .card.meal { --c: var(--meal); }
+.card.fridge { --c: var(--fridge); } .card.dish { --c: var(--dish); } .card.meal { --c: var(--meal); } .card.prep { --c: var(--prep); }
 .card-h { display: flex; align-items: center; gap: 10px; padding: 14px 16px 6px; }
 .card-h .ic { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; font-size: 22px; background: color-mix(in srgb, var(--c) 12%, #fff); }
 .card-h h2 { margin: 0; font-size: 18px; }

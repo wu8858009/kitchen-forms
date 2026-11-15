@@ -40,6 +40,7 @@ MODULES = {
     # 網址資料夾 → (資料夾, 原本單獨程式的名稱, 原本程式的單一執行 mutex)
     "fridge": (_APPDATA / "FridgeTemp", "冰箱溫度記錄表", "FridgeTemp_SingleInstance"),
     "dish": (_APPDATA / "DishSales", "菜品銷售紀錄", "DishSales_SingleInstance"),
+    "prep": (_APPDATA / "KitchenPrep", "備料交接日誌", None),  # 只在本系統裡，沒有單獨程式
 }
 FILE_TYPES = {
     ".xlsx": "Excel 活頁簿 (*.xlsx)",
@@ -250,7 +251,7 @@ def _single_instance():
     if _TEST_ROOT:
         return True
     k32 = ctypes.windll.kernel32
-    names = [("KitchenForms_SingleInstance", None)] + [(m[2], m[1]) for m in MODULES.values()]
+    names = [("KitchenForms_SingleInstance", None)] + [(m[2], m[1]) for m in MODULES.values() if m[2]]
     for name, label in names:
         h = k32.CreateMutexW(None, False, name)
         if k32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
@@ -308,6 +309,27 @@ def _selftest(out_path):
         js("document.querySelector('.kn-home').click()")
         result["back_home_2"] = wait("window.__kitchen && window.__kitchen.summary && window.__kitchen.summary.dish ? 1 : 0")
         result["dish_summary"] = js("JSON.stringify(window.__kitchen.summary.dish)")
+        # 備料交接：開啟、填兩項＋簽名、存 PDF、回首頁
+        js("document.querySelector('.card.prep .btn').click()")
+        result["prep_items"] = wait("window.__prep && window.__prep.db ? window.__prep.db.items.length : 0")
+        time.sleep(0.8)
+        js("""(() => { const q = document.querySelectorAll('.it input.q'); q[0].value = '10'; q[0].dispatchEvent(new Event('input', {bubbles: true}));
+            document.querySelectorAll('.it .ck')[1].click();
+            const s = document.querySelector('[data-k=sign]'); s.value = '測試主管'; s.dispatchEvent(new Event('input', {bubbles: true})); })()""")
+        time.sleep(0.6)
+        js("window.__prep.flush().then(() => { location.hash = '#/sheet'; setTimeout(() => document.querySelector('[data-act=print]').click(), 600); })")
+        exp = Path(os.environ.get("KITCHEN_EXPORT_DIR", "."))
+        pdfs = []
+        for _ in range(40):
+            time.sleep(0.5)
+            pdfs = [p for p in exp.glob("*備料交接*.pdf") if p.stat().st_size > 10000]
+            if pdfs:
+                break
+        result["prep_pdf"] = [[p.name, p.stat().st_size, p.read_bytes().count(b"/Type /Page\n")] for p in pdfs]
+        result["prep_saved"] = bool(json.loads(_data_file("prep").read_text(encoding="utf-8"))["logs"].get(dt.date.today().isoformat()))
+        js("document.querySelector('.kn-home').click()")
+        result["back_home_3"] = wait("window.__kitchen && window.__kitchen.summary && window.__kitchen.summary.prep ? 1 : 0")
+        result["prep_summary"] = js("JSON.stringify(window.__kitchen.summary.prep)")
         result["meal_summary"] = js("JSON.stringify(window.__kitchen.summary.meal)")
         result["open_meal"] = js("window.pywebview.api.open_meal()")
         time.sleep(0.3)
@@ -315,7 +337,8 @@ def _selftest(out_path):
         result["window"] = [_window.x, _window.y, _window.width, _window.height]
         fs = json.loads(result["fridge_summary"] or "null") or {}
         ds = json.loads(result["dish_summary"] or "null") or {}
-        result["ok"] = bool(result["home_cards"] == 3 and result["fridge_loaded"] and result["fridge_home_btn"]
+        ps = json.loads(result.get("prep_summary") or "null") or {}
+        result["ok"] = bool(result["home_cards"] == 4 and ps.get("done", 0) >= 2 and ps.get("sign") and result["prep_pdf"] and result["prep_saved"] and result["fridge_loaded"] and result["fridge_home_btn"]
                             and result["fridge_saved_today"] and fs.get("done", 0) >= 1
                             and result["dish_loaded"] and ds.get("t", {}).get("q", 0) >= 3)
     except Exception as e:  # noqa: BLE001
