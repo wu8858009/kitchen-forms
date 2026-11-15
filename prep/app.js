@@ -1,7 +1,7 @@
 /* 備料交接日誌 — 依紙本「碧潭廚房備料交接日誌」：各站區每日／指定星期的備料品項、備料量、交接事項、站區分配、開台，可列印 A4 交接表 */
 (() => {
   'use strict';
-  const VERSION = '1.0.0';
+  const VERSION = '1.0.1';
   const DESK = new URLSearchParams(location.search).has('desktop');
   const IS_MOBILE = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 
@@ -209,7 +209,7 @@
     const e = L.q[it.id] || {};
     const tg = target(it, hol);
     return `<div class="it${filled(e) ? ' done' : ''}${on ? '' : ' off'}" data-id="${it.id}">
-      <div class="nm">${esc(it.name)}<small>${esc(it.time)}・${daysLabel(it.days)}・${it.mins ? it.mins + ' 分' : ''}</small></div>
+      <div class="nm">${esc(it.name)}<small>${esc(it.time)}・${daysLabel(it.days)}${it.mins ? '・' + it.mins + ' 分' : ''}<em class="tg2">・${hol ? '假日' : '平日'} ${esc(tg) || '—'}</em></small></div>
       <span class="tg" title="${hol ? '假日' : '平日'}份量">${esc(tg) || '—'}</span>
       <input class="q" data-f="v" value="${esc(e.v || '')}" placeholder="備料量" aria-label="${esc(it.name)} 備料量">
       <input class="o" data-f="o" value="${esc(e.o || '')}" placeholder="順序" aria-label="${esc(it.name)} 備料順序">
@@ -361,11 +361,27 @@
       <div class="bar no-print"><button class="btn pri" data-act="print">🖨️ ${DESK || IS_MOBILE ? '存成 PDF' : '列印'}</button>
         <label><input type="checkbox" id="blank" ${blankMode ? 'checked' : ''}> 空白表（只印品項，給現場手寫）</label>
         <span class="muted">A4 直式，共 ${sheetPages(d).length} 頁</span></div>
-      <div class="sheets">${sheetPages(d, blankMode).join('')}</div></div>`;
+      <div class="sheets-fit"><div class="sheets">${sheetPages(d, blankMode).join('')}</div></div></div>`;
     bindBar(el, 'sheet');
+    fitSheets();
     $('#blank', el).addEventListener('change', (e) => { blankMode = e.target.checked; route(); });
     $('[data-act=print]', el).addEventListener('click', () => printSheets(d));
   }
+  // 交接表預覽依畫面寬度等比縮放（手機、平板也能整張看到；列印不受影響）
+  function fitSheets() {
+    const box = $('.sheets-fit'), sh = $('.sheets', box || document);
+    if (!box || !sh) return;
+    sh.style.transform = ''; sh.style.width = ''; box.style.height = '';
+    const avail = box.clientWidth, k = Math.min(1, avail / 726);
+    if (k >= 1) return;
+    sh.style.width = '718px'; sh.style.alignItems = 'flex-start';
+    sh.style.transform = `scale(${k})`;
+    box.style.height = Math.ceil(sh.scrollHeight * k) + 'px';
+    box.style.paddingLeft = Math.max(0, (avail - 718 * k) / 2) + 'px';
+  }
+  let fitT;
+  window.addEventListener('resize', () => { clearTimeout(fitT); fitT = setTimeout(() => { if (cur.view === 'sheet') fitSheets(); }, 120); });
+
   function loadJs(src) {
     return new Promise((res, rej) => {
       if ($$('script').some((s) => s.src.endsWith(src.replace('../', '')))) return res();
@@ -430,15 +446,15 @@
       const its = itemsOf(s.id);
       return `<tr class="sth"><td colspan="9">${esc(s.name)}（${its.length} 項）<button class="btn sm" data-act="add" data-st="${s.id}" style="margin-left:10px">＋ 新增品項</button></td></tr>`
         + its.map((it, i) => `<tr data-id="${it.id}">
-          <td><input data-f="name" value="${esc(it.name)}"></td>
-          <td style="width:76px"><input data-f="time" value="${esc(it.time)}" placeholder="14-18"></td>
-          <td style="width:200px"><div class="days"><button data-day="" class="${it.days ? '' : 'on'}" title="每天">每</button>${[1, 2, 3, 4, 5, 6, 0].map((n) => `<button data-day="${n}" class="${it.days.includes(String(n)) ? 'on' : ''}">${WD[n]}</button>`).join('')}</div></td>
-          <td style="width:62px"><input data-f="mins" value="${it.mins || ''}" inputmode="numeric"></td>
-          <td style="width:76px"><input data-f="wd" value="${esc(it.wd)}"></td>
-          <td style="width:76px"><input data-f="hd" value="${esc(it.hd)}"></td>
-          <td style="width:96px"><select data-f="st">${stations().map((x) => `<option value="${x.id}"${x.id === it.st ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></td>
-          <td style="width:64px;white-space:nowrap"><button class="btn sm" data-act="up" ${i ? '' : 'disabled'}>↑</button><button class="btn sm" data-act="down" ${i < its.length - 1 ? '' : 'disabled'}>↓</button></td>
-          <td style="width:40px"><button class="btn sm danger" data-act="del" title="刪除">✕</button></td></tr>`).join('');
+          <td class="c-name" data-l="品項"><input data-f="name" value="${esc(it.name)}"></td>
+          <td class="c-time" data-l="時段" style="width:76px"><input data-f="time" value="${esc(it.time)}" placeholder="14-18"></td>
+          <td class="c-days" data-l="星期" style="width:200px"><div class="days"><button data-day="" class="${it.days ? '' : 'on'}" title="每天">每</button>${[1, 2, 3, 4, 5, 6, 0].map((n) => `<button data-day="${n}" class="${it.days.includes(String(n)) ? 'on' : ''}">${WD[n]}</button>`).join('')}</div></td>
+          <td class="c-mins" data-l="分鐘" style="width:62px"><input data-f="mins" value="${it.mins || ''}" inputmode="numeric"></td>
+          <td class="c-wd" data-l="平日" style="width:76px"><input data-f="wd" value="${esc(it.wd)}"></td>
+          <td class="c-hd" data-l="假日" style="width:76px"><input data-f="hd" value="${esc(it.hd)}"></td>
+          <td class="c-st" data-l="站區" style="width:96px"><select data-f="st">${stations().map((x) => `<option value="${x.id}"${x.id === it.st ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></td>
+          <td class="c-ord" style="width:64px;white-space:nowrap"><button class="btn sm" data-act="up" ${i ? '' : 'disabled'}>↑</button><button class="btn sm" data-act="down" ${i < its.length - 1 ? '' : 'disabled'}>↓</button></td>
+          <td class="c-del" style="width:40px"><button class="btn sm danger" data-act="del" title="刪除">✕</button></td></tr>`).join('');
     }).join('');
     el.innerHTML = `<div class="wrap">
       <p class="muted" style="margin-top:0">直接點欄位修改，會自動儲存。星期按「每」＝每天都要備；選星期（可複選）＝只有那幾天要備。份量欄留白時，假日沿用平日份量。</p>
