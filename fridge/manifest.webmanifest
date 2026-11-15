@@ -1,0 +1,15 @@
+{
+  "name": "冰箱溫度記錄表系統",
+  "short_name": "冰箱溫度",
+  "description": "冷藏、冷凍設備每日溫度記錄、超溫處置、月報表與趨勢圖",
+  "lang": "zh-Hant",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#edf1f7",
+  "theme_color": "#0b1a33",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

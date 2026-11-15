@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b1a33">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="冰箱溫度">
+<title>冰箱溫度記錄表系統</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="styles.css?v=17">
+</head>
+<body>
+<!-- 啟動動畫：App 載入完成後淡出（至少顯示約 1.6 秒） -->
+<div id="splash" aria-hidden="true">
+  <div class="spl">
+    <div class="spl-logo">
+      <svg viewBox="0 0 140 140" width="140" height="140">
+        <defs>
+          <linearGradient id="splG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#60a5fa"/><stop offset="1" stop-color="#22d3ee"/></linearGradient>
+          <linearGradient id="splM" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#60a5fa"/></linearGradient>
+        </defs>
+        <circle cx="70" cy="70" r="62" fill="rgba(255,255,255,.04)" stroke="rgba(255,255,255,.1)" stroke-width="4"/>
+        <circle class="spl-arc" cx="70" cy="70" r="62" fill="none" stroke="url(#splG)" stroke-width="4" stroke-linecap="round" transform="rotate(-90 70 70)"/>
+        <rect class="spl-band" x="80" y="44" width="16" height="30" rx="3" fill="rgba(74,222,128,.22)"/>
+        <g stroke="rgba(255,255,255,.45)" stroke-width="2" stroke-linecap="round">
+          <line x1="80" y1="36" x2="88" y2="36"/><line x1="80" y1="48" x2="86" y2="48"/><line x1="80" y1="60" x2="88" y2="60"/><line x1="80" y1="72" x2="86" y2="72"/><line x1="80" y1="84" x2="88" y2="84"/>
+        </g>
+        <rect x="58" y="26" width="18" height="70" rx="9" fill="rgba(255,255,255,.12)" stroke="rgba(255,255,255,.55)" stroke-width="2.5"/>
+        <rect class="spl-merc" x="63" y="34" width="8" height="66" rx="4" fill="url(#splM)"/>
+        <circle cx="67" cy="104" r="13" fill="url(#splM)" stroke="rgba(255,255,255,.55)" stroke-width="2.5"/>
+        <circle class="spl-ok" cx="104" cy="98" r="11" fill="#22c55e"/>
+        <path class="spl-ok" d="M98.5 98.5l4 4 7-8" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div class="spl-shop" id="splShop"></div>
+    <div class="spl-title">冰箱溫度記錄表</div>
+    <div class="spl-sub">每日記錄・超溫警示・月報表</div>
+    <div class="spl-bar"><i></i></div>
+  </div>
+  <span class="spl-snow" style="--x:8%;--s:16px;--d:0s;--t:5.5s">❄</span>
+  <span class="spl-snow" style="--x:22%;--s:11px;--d:1.1s;--t:4.6s">❄</span>
+  <span class="spl-snow" style="--x:37%;--s:14px;--d:.4s;--t:6.2s">❄</span>
+  <span class="spl-snow" style="--x:58%;--s:10px;--d:1.6s;--t:5s">❄</span>
+  <span class="spl-snow" style="--x:71%;--s:18px;--d:.2s;--t:6.6s">❄</span>
+  <span class="spl-snow" style="--x:86%;--s:12px;--d:.9s;--t:4.8s">❄</span>
+  <span class="spl-snow" style="--x:94%;--s:9px;--d:2s;--t:5.4s">❄</span>
+</div>
+<script>try { var s = localStorage.getItem('fridgetemp-shop'); if (s) document.getElementById('splShop').textContent = s; } catch (e) {}</script>
+<header class="top">
+  <div class="brand"><img src="icons/icon-192.png" alt=""><span id="shop">冰箱溫度記錄表</span></div>
+  <nav id="nav">
+    <a href="#/day" data-v="day" title="Alt+1"><b>📝</b><span>每日記錄</span><i id="navdot" hidden></i></a>
+    <a href="#/month" data-v="month" title="Alt+2"><b>📋</b><span>月報表</span></a>
+    <a href="#/chart" data-v="chart" title="Alt+3"><b>📈</b><span>溫度趨勢</span></a>
+    <a href="#/settings" data-v="settings" title="Alt+4"><b>⚙️</b><span>設定</span></a>
+  </nav>
+  <span id="status" class="status"></span>
+  <a id="cloudst" class="cloudst" href="#/settings" hidden></a>
+</header>
+<main id="app"><p class="empty">載入中…</p></main>
+<div id="tt" class="tt" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<script src="config.js?v=17"></script>
+<script src="xlsx.js?v=17"></script>
+<script src="app.js?v=17"></script>
+<script src="../kitchen-nav.js?v=1"></script>
+</body>
+</html>

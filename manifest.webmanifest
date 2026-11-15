@@ -1,0 +1,15 @@
+{
+  "name": "廚房專用表格系統",
+  "short_name": "廚房表格",
+  "description": "冰箱溫度記錄、菜品銷售紀錄、員工餐預算的統一入口",
+  "lang": "zh-Hant",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#edf1f7",
+  "theme_color": "#0b1a33",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

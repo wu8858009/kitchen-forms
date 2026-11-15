@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#c2410c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="菜品銷售">
+<title>菜品銷售紀錄系統</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="styles.css?v=2">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><img src="icons/icon-192.png" alt=""><span id="shop">菜品銷售紀錄</span></div>
+  <nav id="nav">
+    <a href="#/day" data-v="day" title="Alt+1"><b>📝</b><span>每日銷量</span></a>
+    <a href="#/menu" data-v="menu" title="Alt+2"><b>🍱</b><span>菜單管理</span></a>
+    <a href="#/report" data-v="report" title="Alt+3"><b>📊</b><span>統計報表</span></a>
+    <a href="#/settings" data-v="settings" title="Alt+4"><b>⚙️</b><span>設定</span></a>
+  </nav>
+  <span id="status" class="status"></span>
+  <a id="cloudst" class="cloudst" href="#/settings" hidden></a>
+</header>
+<main id="app"><p class="empty">載入中…</p></main>
+<div id="tt" class="tt" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<script src="config.js?v=2"></script>
+<script src="xlsx.js?v=2"></script>
+<script src="app.js?v=2"></script>
+<script src="../kitchen-nav.js?v=1"></script>
+</body>
+</html>
