@@ -1,4 +1,4 @@
-/* 加在冰箱、菜品系統頁面上的「首頁」按鈕：先把資料存好再回到廚房專用表格系統首頁 */
+/* 加在冰箱、菜品、員工餐系統頁面上的「首頁」按鈕：先把資料存好再回到廚房專用表格系統首頁 */
 (() => {
   'use strict';
   const DESK = new URLSearchParams(location.search).has('desktop');
@@ -14,7 +14,7 @@
   a.innerHTML = '<span>⌂</span>首頁';
   a.addEventListener('click', async (e) => {
     e.preventDefault();
-    const m = window.__fridge || window.__dish;
+    const m = window.__fridge || window.__dish || window.__meal;
     try { if (m && m.flush) await Promise.race([m.flush(), new Promise((r) => setTimeout(r, 3000))]); } catch (err) { /* 照樣回首頁 */ }
     location.href = home;
   });

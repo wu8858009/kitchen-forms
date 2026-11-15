@@ -44,6 +44,7 @@ MODULES = {
 FILE_TYPES = {
     ".xlsx": "Excel 活頁簿 (*.xlsx)",
     ".json": "JSON 備份 (*.json)",
+    ".csv": "CSV 檔 (*.csv)",
     ".pdf": "PDF 檔 (*.pdf)",
 }
 MEAL_CANDIDATES = [

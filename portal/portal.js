@@ -1,7 +1,7 @@
 /* 廚房專用表格系統 — 首頁儀表板：冰箱溫度、菜品銷售、員工餐三個系統的入口與今日重點 */
 (() => {
   'use strict';
-  const VERSION = '1.0.0';
+  const VERSION = '1.1.0';
   const DESK = new URLSearchParams(location.search).has('desktop');
   const Q = DESK ? '?desktop=1' : '';
   const $ = (s, r = document) => r.querySelector(s);
@@ -138,6 +138,35 @@
   }
 
   // ------------------------------------------------------------------ 員工餐（與電腦版 meal_tracker_pro.py 的週期、預算算法相同）
+  /** 本期初一／十六拜拜菜預扣 → [預扣總額, 其中已叫貨的金額]（用員工餐網頁版的農曆資料；沒載入就不扣） */
+  function mealReserve(d, sI, eI) {
+    const M = window.M;
+    if (!M || !M.isBaibai) return [0, 0];
+    const D = M.D, s = D.parse(sI), e = D.parse(eI), today = D.today();
+    const ings = d.ingredients || [], recs = d.records || [];
+    const names = new Set(M.BAIBAI_ITEMS.map((x) => x[0]));
+    const last = {};
+    [...ings].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.id - b.id)).forEach((r) => { last[r.name] = r.price; });
+    const prevBB = (x) => { let p = D.add(x, -1); for (let k = 0; k < 20; k++) { if (M.isBaibai(p)) break; p = D.add(p, -1); } return p; };
+    const bought = (x) => {
+      const lo = D.iso(prevBB(x)), hi = D.iso(x);
+      if (recs.some((r) => lo < (r.date || '') && (r.date || '') <= hi && String(r.note || '').includes('拜拜'))) return names;
+      return new Set(ings.filter((r) => names.has(r.name) && !r.price_only && lo < r.date && r.date <= hi).map((r) => r.name));
+    };
+    let total = 0, paid = 0, prev = prevBB(s);
+    for (let x = s; x < D.add(e, 20); x = D.add(x, 1)) {
+      if (!M.isBaibai(x)) continue;
+      const lo = D.iso(prev), hi = D.iso(x);
+      const inwin = (v) => lo < v && v <= hi && sI <= v && v < eI;
+      let ap = ings.filter((r) => names.has(r.name) && !r.price_only && inwin(r.date)).reduce((a, r) => a + (+r.amount || 0), 0);
+      ap += recs.filter((r) => String(r.note || '').includes('拜拜') && inwin(r.date || '')).reduce((a, r) => a + (+r.amount || 0), 0);
+      let due = 0;
+      if (today <= x && x < e) { const b = bought(x); for (const [n, q] of M.BAIBAI_ITEMS) if (!b.has(n)) due += (last[n] || 0) * q; }
+      if (ap || due) { paid += ap; total += ap + due; }
+      prev = x;
+    }
+    return [total, paid];
+  }
   function mealSummary(d, now) {
     if (!d || !Array.isArray(d.records)) return null;
     const st = d.settings || {};
@@ -151,27 +180,28 @@
     const ks = Object.keys(pb).filter((k) => k <= sI).sort();
     if (ks.length) budget = +pb[ks[ks.length - 1]] || budget;
     const recs = d.records.filter((r) => r.date >= sI && r.date < eI);
-    const used = recs.reduce((a, r) => a + (+r.amount || 0), 0);
+    const [reserve, paid] = mealReserve(d, sI, eI);
+    const used = recs.reduce((a, r) => a + (+r.amount || 0), 0) - paid;
     const today = ymd(now);
     const todayAmt = recs.filter((r) => r.date === today).reduce((a, r) => a + (+r.amount || 0), 0);
     const last = recs.map((r) => r.date).sort().pop();
     const eDisp = new Date(e); eDisp.setDate(eDisp.getDate() - 1);
     const daysLeft = Math.round((e - new Date(y, m, now.getDate())) / 864e5);
-    return { budget, used, remain: budget - used, pct: used / budget, warn: (st.warn_pct || 80) / 100, danger: (st.danger_pct || 90) / 100,
+    return { budget, used, reserve, remain: budget - used - reserve, pct: (used + reserve) / budget, warn: (st.warn_pct || 80) / 100, danger: (st.danger_pct || 90) / 100,
       range: `${s.getMonth() + 1}/${s.getDate()} – ${eDisp.getMonth() + 1}/${eDisp.getDate()}`, todayAmt, last, daysLeft };
   }
   function mealCard(s, info) {
     let body;
-    const btns = [];
+    const btns = [`<a class="btn" href="meal/index.html${Q}" data-mod="meal">開啟</a>`, `<a class="btn sub" href="meal/index.html${Q}#report" data-mod="meal">報表</a>`];
     if (DESK) {
-      btns.push('<button class="btn" data-act="meal-open">開啟員工餐程式</button>');
+      btns.push('<button class="btn sub" data-act="meal-open">電腦版程式</button>');
       btns.push('<button class="btn sub" data-act="meal-pick">程式位置…</button>');
-    } else btns.push(`<button class="btn" data-act="meal-cloud">${mealConf().pw ? '雲端連線設定' : '連線雲端資料'}</button>`);
+    }
     if (!s) {
-      if (DESK) body = info.exe ? '<p class="note">找不到員工餐的資料檔（meal_data.json）。</p>'
-        : '<p class="note">還沒設定員工餐程式的位置。請按「程式位置…」選擇「碧水堂員工餐.exe」。</p>';
+      if (DESK) body = info.exe ? '<p class="note">找不到員工餐電腦版的資料檔（meal_data.json）。按「開啟」可直接使用網頁版（資料在 Google 試算表，跟電腦版同一份）。</p>'
+        : '<p class="note">按「開啟」使用員工餐網頁版（資料在 Google 試算表，跟電腦版同一份）。要開電腦版程式，請按「程式位置…」選擇「碧水堂員工餐.exe」。</p>';
       else body = info.error ? `<p class="note bad">${esc(info.error)}</p>`
-        : '<p class="note">員工餐記帳請用電腦版。輸入雲端同步密碼後，這裡會顯示本期預算使用狀況。</p>';
+        : '<p class="note">按「開啟」，第一次輸入電腦版「雲端同步」的密碼，就能在這裡記帳、看本期預算（資料跟電腦版同一份）。</p>';
     } else {
       const lvl = s.remain < 0 || s.pct >= s.danger ? 'bad' : s.pct >= s.warn ? 'warn' : '';
       body = `<div class="kpis">
@@ -180,10 +210,10 @@
           <div class="kpi"><div class="l">今日</div><div class="v">${money(s.todayAmt)}</div></div>
         </div>
         <div class="bar ${lvl}"><i style="width:${Math.min(100, s.pct * 100).toFixed(1)}%"></i></div>
-        <p class="note">結算週期 ${s.range}（還有 ${s.daysLeft} 天）・預算 ${money(s.budget)}・已用 ${(s.pct * 100).toFixed(0)}%${s.last ? '・最後記帳 ' + s.last.slice(5).replace('-', '/') : ''}<br>剩餘未扣初一／十六拜拜菜預扣，以員工餐程式顯示為準。</p>`;
+        <p class="note">結算週期 ${s.range}（還有 ${s.daysLeft} 天）・預算 ${money(s.budget)}${s.reserve ? '・拜拜預扣 ' + money(s.reserve) : ''}・已用 ${(s.pct * 100).toFixed(0)}%${s.last ? '・最後記帳 ' + s.last.slice(5).replace('-', '/') : ''}</p>`;
     }
     if (DESK && info.exe) body += `<p class="note">程式：<code>${esc(info.exe)}</code></p>`;
-    return card('meal', '🍚', '員工餐金額總計', '餐費記帳・食材單價・本期預算', body, btns.join(''));
+    return card('meal', '🍚', '員工餐金額總計', '餐費記帳・食材單價・叫貨・排班・菜單・食譜', body, btns.join(''));
   }
 
   function card(cls, ic, title, sub, body, foot) {
@@ -204,40 +234,15 @@
     $('#shop').textContent = shop ? `${shop}・廚房表格` : '廚房專用表格系統';
     $('#cards').innerHTML = fridgeCard(fs) + dishCard(ds) + mealCard(ms, d.mealInfo || {});
     $('#foot').innerHTML = `廚房專用表格系統 v${VERSION}${DESK ? '（桌面版）' : ''}・更新於 ${pad(now.getHours())}:${pad(now.getMinutes())}`
-      + (DESK ? '<br>冰箱、菜品的資料與原本的單獨程式共用同一份（%APPDATA%），雲端同步設定也沿用。' : '<br>冰箱、菜品的資料存在這台裝置，並可各自在設定頁連線 Google 雲端同步。');
+      + (DESK ? '<br>冰箱、菜品的資料與原本的單獨程式共用同一份（%APPDATA%），雲端同步設定也沿用；員工餐的資料在 Google 試算表，跟電腦版同一份。'
+        : '<br>冰箱、菜品的資料存在這台裝置，並可各自在設定頁連線 Google 雲端同步；員工餐的資料在 Google 試算表，跟電腦版同一份。');
     window.__kitchen.summary = { fridge: fs, dish: ds, meal: ms };
-  }
-
-  function mealCloudDialog() {
-    const mc = mealConf();
-    const bg = document.createElement('div');
-    bg.className = 'modal-bg';
-    bg.innerHTML = `<form class="modal"><h3>員工餐雲端資料</h3>
-      <p class="note">輸入員工餐電腦版「雲端同步」用的密碼，首頁就能顯示本期預算（只讀取，不會修改資料）。密碼只存在這台裝置。</p>
-      <label>雲端網址</label><input id="mu" value="${esc(mc.url || window.MEAL_CLOUD_URL || '')}" autocomplete="off">
-      <label>同步密碼</label><input id="mp" type="password" value="${esc(mc.pw || '')}" autocomplete="current-password">
-      <div class="row">${mc.pw ? '<button type="button" class="sec" data-x="off">取消連線</button>' : ''}<button type="button" class="sec" data-x="close">關閉</button><button class="pri">儲存</button></div></form>`;
-    document.body.appendChild(bg);
-    const close = () => bg.remove();
-    bg.addEventListener('click', (e) => {
-      if (e.target === bg || e.target.dataset.x === 'close') close();
-      if (e.target.dataset.x === 'off') { localStorage.removeItem(LS_MEAL); close(); render(); }
-    });
-    bg.querySelector('form').addEventListener('submit', (e) => {
-      e.preventDefault();
-      const url = $('#mu', bg).value.trim(), pw = $('#mp', bg).value;
-      if (!pw) return toast('請輸入密碼');
-      try { localStorage.setItem(LS_MEAL, JSON.stringify({ url, pw })); } catch (err) { /* 無痕模式 */ }
-      close(); toast('讀取中…'); render();
-    });
-    $('#mp', bg).focus();
   }
 
   document.addEventListener('click', async (e) => {
     const b = e.target.closest('[data-act]');
     if (!b) return;
     const a = b.dataset.act;
-    if (a === 'meal-cloud') mealCloudDialog();
     if (a === 'meal-open') {
       const r = await (await api()).open_meal();
       if (r === true) toast('已開啟員工餐程式'); else toast(r || '無法開啟', 4000);
@@ -250,8 +255,7 @@
   $('#refresh').addEventListener('click', () => { render().then(() => toast('已更新')); });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'F5') { e.preventDefault(); render(); }
-    if (e.altKey && ['1', '2'].includes(e.key)) { e.preventDefault(); location.href = (e.key === '1' ? 'fridge' : 'dish') + `/index.html${Q}`; }
-    if (e.altKey && e.key === '3' && DESK) { e.preventDefault(); api().then((x) => x.open_meal()); }
+    if (e.altKey && ['1', '2', '3'].includes(e.key)) { e.preventDefault(); location.href = ({ 1: 'fridge', 2: 'dish', 3: 'meal' })[e.key] + `/index.html${Q}`; }
   });
   // 從各系統回到首頁、或切回這個視窗時更新數字
   document.addEventListener('visibilitychange', () => { if (!document.hidden) render(); });

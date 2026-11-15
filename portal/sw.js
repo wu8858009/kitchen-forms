@@ -1,6 +1,6 @@
 // 首頁的離線快取（冰箱、菜品資料夾有各自的 sw.js）；有網路時一律抓最新版
-const CACHE = 'kitchenforms-v1';
-const SHELL = ['./', 'index.html', 'portal.css?v=1', 'config.js?v=1', 'portal.js?v=1', 'kitchen-nav.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
+const CACHE = 'kitchenforms-v2';
+const SHELL = ['./', 'index.html', 'portal.css?v=1', 'config.js?v=1', 'portal.js?v=2', 'meal/js/core.js?v=1', 'kitchen-nav.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -12,8 +12,8 @@ self.addEventListener('fetch', (e) => {
   const req = e.request;
   const url = new URL(req.url);
   if (req.method !== 'GET' || url.origin !== location.origin) return;
-  // 冰箱、菜品頁面交給它們自己的 service worker
-  if (/\/(fridge|dish)\//.test(url.pathname)) return;
+  // 冰箱、菜品、員工餐頁面交給它們自己的 service worker
+  if (/\/(fridge|dish|meal)\//.test(url.pathname)) return;
   e.respondWith(
     fetch(req).then((res) => {
       if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); }
