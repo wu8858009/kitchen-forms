@@ -1,7 +1,7 @@
-/* 廚房專用表格系統 — 首頁儀表板：冰箱溫度、菜品銷售、員工餐三個系統的入口與今日重點 */
+/* 廚房專用表格系統 — 首頁儀表板：冰箱溫度、備料交接、菜品銷售、員工餐四個系統的入口與今日重點 */
 (() => {
   'use strict';
-  const VERSION = '1.1.0';
+  const VERSION = '1.2.0';
   const DESK = new URLSearchParams(location.search).has('desktop');
   const Q = DESK ? '?desktop=1' : '';
   const $ = (s, r = document) => r.querySelector(s);
@@ -47,9 +47,9 @@
   async function loadAll() {
     if (DESK) {
       const r = parse(await (await api()).dash()) || {};
-      return { fridge: parse(r.fridge), dish: parse(r.dish), meal: parse(r.meal), mealInfo: r.meal_info || {} };
+      return { fridge: parse(r.fridge), dish: parse(r.dish), prep: parse(r.prep), meal: parse(r.meal), mealInfo: r.meal_info || {} };
     }
-    const [f, d] = await Promise.all([idbGet('fridgetemp'), idbGet('dishsales')]);
+    const [f, d, p] = await Promise.all([idbGet('fridgetemp'), idbGet('dishsales'), idbGet('kitchenprep')]);
     let meal = null; const mealInfo = {};
     const mc = mealConf();
     if (mc.pw) {
@@ -59,7 +59,7 @@
         if (j.ok) meal = j.data; else mealInfo.error = j.error || '讀取失敗';
       } catch (e) { mealInfo.error = '連不上雲端（' + (e.message || e) + '）'; }
     }
-    return { fridge: parse(f), dish: parse(d), meal, mealInfo };
+    return { fridge: parse(f), dish: parse(d), prep: parse(p), meal, mealInfo };
   }
 
   // ------------------------------------------------------------------ 冰箱溫度
@@ -216,6 +216,40 @@
     return card('meal', '🍚', '員工餐金額總計', '餐費記帳・食材單價・叫貨・排班・菜單・食譜', body, btns.join(''));
   }
 
+  // ------------------------------------------------------------------ 備料交接日誌
+  function prepSummary(db, now) {
+    if (!db || !Array.isArray(db.items)) return null;
+    const d = ymd(now), wd = String(now.getDay());
+    const L = (db.logs || {})[d] || { q: {} };
+    const hol = L.hol != null ? L.hol : now.getDay() === 0 || now.getDay() === 6;
+    const sts = (db.stations || []).filter((s) => !s.deleted).sort((a, b) => a.ord - b.ord);
+    let total = 0, done = 0;
+    const per = sts.map((s) => {
+      let t = 0, n = 0;
+      db.items.forEach((it) => {
+        if (it.deleted || it.st !== s.id || (it.days && !it.days.includes(wd))) return;
+        t++; if (L.q[it.id] && String(L.q[it.id].v || '').trim()) n++;
+      });
+      total += t; done += n;
+      return { name: s.name, t, n };
+    });
+    const notes = Object.values(L.notes || {}).filter((x) => String(x).trim()).length;
+    return { total, done, per, hol, sign: (L.sign || '').trim(), notes };
+  }
+  function prepCard(s) {
+    let body;
+    if (!s) body = '<p class="note">紙本「備料交接日誌」的電子版：各站區今天要備的品項、備料量、交接事項，可列印 A4 交接表。點「開啟」開始使用。</p>';
+    else body = `<div class="kpis">
+          <div class="kpi ${s.done >= s.total && s.total ? 'ok' : 'warn'}"><div class="l">今日備料完成</div><div class="v">${s.done}<small> / ${s.total}</small></div></div>
+          <div class="kpi"><div class="l">份量</div><div class="v">${s.hol ? '假日' : '平日'}</div></div>
+          <div class="kpi ${s.sign ? 'ok' : ''}"><div class="l">主管簽名</div><div class="v">${s.sign ? esc(s.sign) : '<small>未簽</small>'}</div></div>
+        </div>
+        <div class="chips">${s.per.filter((p) => p.t).map((p) => `<span class="chip ${p.n >= p.t ? 'ok' : p.n ? 'warn' : ''}">${esc(p.name)}　${p.n}/${p.t}</span>`).join('')}</div>
+        ${s.notes ? `<p class="note">今天有 ${s.notes} 個站區寫了交接事項</p>` : ''}`;
+    return card('prep', '📋', '備料交接日誌', '各站區備料・交接事項・列印交接表', body,
+      `<a class="btn" href="prep/index.html${Q}#/day" data-mod="prep">開啟</a><a class="btn sub" href="prep/index.html${Q}#/sheet" data-mod="prep">列印</a>`);
+  }
+
   function card(cls, ic, title, sub, body, foot) {
     return `<article class="card ${cls}"><div class="card-h"><div class="ic">${ic}</div><h2>${title}<small>${sub}</small></h2></div>
       <div class="card-b">${body}</div><div class="card-f">${foot}</div></article>`;
@@ -229,14 +263,14 @@
     let d;
     try { d = await loadAll(); } catch (e) { d = { mealInfo: { error: String(e.message || e) } }; }
     last = d;
-    const fs = fridgeSummary(d.fridge, now), ds = dishSummary(d.dish, now), ms = mealSummary(d.meal, now);
+    const fs = fridgeSummary(d.fridge, now), ds = dishSummary(d.dish, now), ms = mealSummary(d.meal, now), ps = prepSummary(d.prep, now);
     const shop = (fs && fs.shop) || (ds && ds.shop) || '';
     $('#shop').textContent = shop ? `${shop}・廚房表格` : '廚房專用表格系統';
-    $('#cards').innerHTML = fridgeCard(fs) + dishCard(ds) + mealCard(ms, d.mealInfo || {});
+    $('#cards').innerHTML = fridgeCard(fs) + prepCard(ps) + dishCard(ds) + mealCard(ms, d.mealInfo || {});
     $('#foot').innerHTML = `廚房專用表格系統 v${VERSION}${DESK ? '（桌面版）' : ''}・更新於 ${pad(now.getHours())}:${pad(now.getMinutes())}`
       + (DESK ? '<br>冰箱、菜品的資料與原本的單獨程式共用同一份（%APPDATA%），雲端同步設定也沿用；員工餐的資料在 Google 試算表，跟電腦版同一份。'
         : '<br>冰箱、菜品的資料存在這台裝置，並可各自在設定頁連線 Google 雲端同步；員工餐的資料在 Google 試算表，跟電腦版同一份。');
-    window.__kitchen.summary = { fridge: fs, dish: ds, meal: ms };
+    window.__kitchen.summary = { fridge: fs, dish: ds, meal: ms, prep: ps };
   }
 
   document.addEventListener('click', async (e) => {
@@ -255,7 +289,7 @@
   $('#refresh').addEventListener('click', () => { render().then(() => toast('已更新')); });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'F5') { e.preventDefault(); render(); }
-    if (e.altKey && ['1', '2', '3'].includes(e.key)) { e.preventDefault(); location.href = ({ 1: 'fridge', 2: 'dish', 3: 'meal' })[e.key] + `/index.html${Q}`; }
+    if (e.altKey && ['1', '2', '3', '4'].includes(e.key)) { e.preventDefault(); location.href = ({ 1: 'fridge', 2: 'dish', 3: 'meal', 4: 'prep' })[e.key] + `/index.html${Q}`; }
   });
   // 從各系統回到首頁、或切回這個視窗時更新數字
   document.addEventListener('visibilitychange', () => { if (!document.hidden) render(); });

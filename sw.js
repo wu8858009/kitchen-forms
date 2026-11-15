@@ -1,6 +1,6 @@
 // 首頁的離線快取（冰箱、菜品資料夾有各自的 sw.js）；有網路時一律抓最新版
-const CACHE = 'kitchenforms-v2';
-const SHELL = ['./', 'index.html', 'portal.css?v=1', 'config.js?v=1', 'portal.js?v=2', 'meal/js/core.js?v=1', 'kitchen-nav.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
+const CACHE = 'kitchenforms-v3';
+const SHELL = ['./', 'index.html', 'portal.css?v=2', 'config.js?v=1', 'portal.js?v=3', 'meal/js/core.js?v=1', 'kitchen-nav.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
