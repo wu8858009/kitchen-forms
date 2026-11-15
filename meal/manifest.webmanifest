@@ -1,0 +1,15 @@
+{
+  "name": "員工餐金額管理系統 PRO",
+  "short_name": "員工餐",
+  "description": "員工餐費記帳、食材單價、叫貨計算、排班、菜單、農民曆、食譜庫（與電腦版共用 Google 試算表資料）",
+  "lang": "zh-Hant",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0D1117",
+  "theme_color": "#0D1117",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
