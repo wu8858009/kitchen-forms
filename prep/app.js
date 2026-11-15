@@ -1,7 +1,7 @@
 /* 備料交接日誌 — 依紙本「碧潭廚房備料交接日誌」：各站區每日／指定星期的備料品項、備料量、交接事項、站區分配、開台，可列印 A4 交接表 */
 (() => {
   'use strict';
-  const VERSION = '1.1.0';
+  const VERSION = '1.2.0';
   const DESK = new URLSearchParams(location.search).has('desktop');
   const IS_MOBILE = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 
@@ -22,6 +22,21 @@
   function toast(msg, ms = 2600) {
     const t = $('#toast'); t.textContent = msg; t.hidden = false;
     clearTimeout(toast.t); toast.t = setTimeout(() => { t.hidden = true; }, ms);
+  }
+  // 輸入文字的小視窗（取代 prompt，手機、桌面版都一樣好用）；取消回傳 null
+  function askText(title, value = '', ok = '確定') {
+    return new Promise((res) => {
+      const bg = document.createElement('div');
+      bg.className = 'modal-bg';
+      bg.innerHTML = `<form class="modal"><h3>${esc(title)}</h3><div class="field"><input id="askv" value="${esc(value)}" autocomplete="off"></div>
+        <div class="row"><button type="button" class="btn" data-x="no">取消</button><button class="btn pri">${esc(ok)}</button></div></form>`;
+      document.body.append(bg);
+      const done = (v) => { bg.remove(); res(v); };
+      bg.addEventListener('click', (e) => { if (e.target === bg || e.target.dataset.x === 'no') done(null); });
+      bg.addEventListener('keydown', (e) => { if (e.key === 'Escape') done(null); });
+      $('form', bg).addEventListener('submit', (e) => { e.preventDefault(); const v = $('#askv', bg).value.trim(); if (v) done(v); });
+      const inp = $('#askv', bg); inp.focus(); inp.select();
+    });
   }
   function setStatus(s, bad) { const e = $('#status'); e.textContent = s; e.classList.toggle('bad', !!bad); }
   const daysLabel = (days) => !days ? '每日' : days.length === 1 ? '週' + WD[+days] : [...days].map((c) => WD[+c]).join('');
@@ -465,7 +480,8 @@
           <td class="c-mins" data-l="分鐘" style="width:62px"><input data-f="mins" value="${it.mins || ''}" inputmode="numeric"></td>
           <td class="c-wd" data-l="平日" style="width:76px"><input data-f="wd" value="${esc(it.wd)}"></td>
           <td class="c-hd" data-l="假日" style="width:76px"><input data-f="hd" value="${esc(it.hd)}"></td>
-          <td class="c-st" data-l="站區" style="width:96px"><select data-f="st">${stations().map((x) => `<option value="${x.id}"${x.id === it.st ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></td>
+          <td class="c-st" data-l="站區" style="width:96px"><select data-f="st">${stations().map((x) => `<option value="${x.id}"${x.id === it.st ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}
+            <option disabled>──────</option><option value="@add">＋ 新增站區…</option><option value="@ren">✎ 修改「${esc((stById(it.st) || {}).name || '')}」名稱…</option><option value="@del">✕ 刪除「${esc((stById(it.st) || {}).name || '')}」站區…</option></select></td>
           <td class="c-ord" style="width:64px;white-space:nowrap"><button class="btn sm" data-act="up" ${i ? '' : 'disabled'}>↑</button><button class="btn sm" data-act="down" ${i < its.length - 1 ? '' : 'disabled'}>↓</button></td>
           <td class="c-del" style="width:40px"><button class="btn sm danger" data-act="del" title="刪除">✕</button></td></tr>`).join('');
     }).join('');
@@ -492,8 +508,36 @@
       const box = t.closest('[data-sid]');
       if (box && t.dataset.s && t.tagName !== 'SELECT') { const s = stById(box.dataset.sid); s[t.dataset.s] = t.value; s.at = now(); save(); }
     });
+    // 品項「站區」下拉選單的特別選項：新增、改名、刪除站區
+    async function stationMenu(t, it) {
+      const cmd = t.value;
+      t.value = it.st; // 先把選單還原，取消時不會停在特別選項上
+      const st = stById(it.st);
+      if (cmd === '@add') {
+        const name = await askText('新增站區（這個品項會移到新站區）', '', '新增');
+        if (!name) return;
+        const sts = stations();
+        const s = { id: uid(), name, page: lastPage(), checks: '', ord: (sts.length ? sts[sts.length - 1].ord : 0) + 1, deleted: false, at: now() };
+        db.stations.push(s);
+        it.st = s.id; it.ord = 1; it.at = now();
+        save(); route(); toast(`已新增站區「${name}」`);
+      }
+      if (cmd === '@ren' && st) {
+        const name = await askText(`修改站區名稱`, st.name, '儲存');
+        if (!name || name === st.name) return;
+        st.name = name; st.at = now(); save(); route(); toast(`已改名為「${name}」`);
+      }
+      if (cmd === '@del' && st) {
+        const n = itemsOf(st.id).length;
+        if (!confirm(`刪除站區「${st.name}」${n ? `和裡面的 ${n} 個品項（包含「${it.name}」）` : ''}？\n（之前日誌裡的記錄會保留）`)) return;
+        st.deleted = true; st.at = now();
+        itemsOf(st.id).forEach((x) => { x.deleted = true; x.at = now(); });
+        save(); route(); toast(`已刪除站區「${st.name}」`);
+      }
+    }
     el.addEventListener('change', (e) => {
       const t = e.target, row = t.closest('tr[data-id]');
+      if (row && t.dataset.f === 'st' && t.value.startsWith('@')) { stationMenu(t, itemOf(row)); return; }
       if (row && t.dataset.f === 'st') { const it = itemOf(row); it.st = t.value; it.ord = Math.max(0, ...itemsOf(t.value).map((x) => x.ord)) + 1; it.at = now(); save(); route(); }
       const box = t.closest('[data-sid]');
       if (box && t.dataset.s === 'page') { const s = stById(box.dataset.sid); s.page = +t.value; s.at = now(); save(); }
