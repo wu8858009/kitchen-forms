@@ -1,7 +1,7 @@
 /* 備料交接日誌 — 依紙本「碧潭廚房備料交接日誌」：各站區每日／指定星期的備料品項、備料量、交接事項、站區分配、開台，可列印 A4 交接表 */
 (() => {
   'use strict';
-  const VERSION = '1.0.1';
+  const VERSION = '1.1.0';
   const DESK = new URLSearchParams(location.search).has('desktop');
   const IS_MOBILE = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 
@@ -91,6 +91,7 @@
     ['bei', '12-18', '5', '打漢堡肉', 120, 'ALL', ''],
   ];
   const ASSIGN = ['控', '砧板', '烤箱', '爐台', '機動', '煎'];
+  const assignKeys = () => (Array.isArray(db.assign) ? db.assign : ASSIGN).filter((k) => String(k).trim());
 
   function seed() {
     const t = now();
@@ -175,12 +176,16 @@
   const cur = { view: 'day', date: today(), all: {} };
   function route() {
     const h = location.hash.replace(/^#\/?/, '').split('/');
+    const prev = cur.view + '|' + cur.date;
     cur.view = ['day', 'sheet', 'items', 'settings'].includes(h[0]) ? h[0] : 'day';
     if ((cur.view === 'day' || cur.view === 'sheet') && /^\d{4}-\d\d-\d\d$/.test(h[1] || '')) cur.date = h[1];
     $$('#nav a').forEach((a) => a.classList.toggle('on', a.dataset.v === cur.view));
-    const el = $('#app');
+    // 每次換一個新的 #app，舊畫面綁的事件才不會累積（否則按一次會執行好幾次）
+    const old = $('#app'), el = old.cloneNode(false);
+    const keep = prev === cur.view + '|' + cur.date ? old.scrollTop : 0; // 同一頁重畫（例如新增品項）時保留捲動位置
+    old.replaceWith(el);
     ({ day: viewDay, sheet: viewSheet, items: viewItems, settings: viewSettings })[cur.view](el);
-    el.scrollTop = 0;
+    el.scrollTop = keep;
   }
   window.addEventListener('hashchange', route);
   function dateBar(view) {
@@ -241,7 +246,7 @@
       <div class="stations">${sts}</div>
       <div class="bottom">
         <div class="box"><h3>站區分配<button class="btn sm" data-act="copyassign" title="帶入前一天的站區分配">帶入前一天</button></h3><div class="grid2">
-          ${ASSIGN.map((k) => `<label>${k}</label><input data-assign="${k}" value="${esc(A[k] || '')}">`).join('')}</div></div>
+          ${assignKeys().map((k) => `<label>${esc(k)}</label><input data-assign="${esc(k)}" value="${esc(A[k] || '')}">`).join('') || '<span class="muted">在「品項設定」可以新增站區分配的位置</span>'}</div></div>
         <div class="box"><h3>銷售異動</h3>
           <div class="field"><label>推</label><input data-k="push" value="${esc(L.push || '')}" placeholder="今天要推的菜"></div>
           <div class="field"><label>停</label><input data-k="stop" value="${esc(L.stop || '')}" placeholder="停售品項"></div></div>
@@ -332,15 +337,22 @@
     const th = '<tr><th>站<br>區</th><th>時<br>段</th><th></th><th>品項</th><th>備料<br>時間</th><th>平日</th><th>假日</th><th>備料量</th><th>備料<br>順序</th><th>交接事項：</th></tr>';
     const body = sts.map((s, i) => stationRows(s, d, hol, L, blank, i === 0)).join('');
     let low = '';
-    if (page === 2 || !stations().some((s) => (s.page || 1) === 2)) {
+    if (page === lastPage()) {
       const A = blank ? {} : (L.assign || {});
       const V = (k) => blank ? '' : esc(L[k] || '');
+      // 站區分配兩個一列；右邊「推」「停」平分（站區分配的列數＋「員工餐」標題列）
+      const keys = assignKeys(), nr = Math.max(1, Math.ceil(keys.length / 2)), R = nr + 1;
+      const ps = Math.ceil(R / 2), ss = R - ps;
+      const cell = (k) => k ? `<td class="lab">${esc(k)}：</td><td class="v">${esc(A[k] || '')}</td>` : '<td class="lab"></td><td></td>';
+      let rows = '';
+      for (let r = 0; r < R; r++) {
+        let tr = r < nr ? cell(keys[r * 2]) + cell(keys[r * 2 + 1]) : '<td class="hd" colspan="4">員工餐</td>';
+        if (r === 0) tr += `<td class="lab" rowspan="${ps}">推：</td><td class="v" rowspan="${ps}">${V('push')}</td>`;
+        if (r === ps) tr += `<td class="lab" rowspan="${ss}">停：</td><td class="v" rowspan="${ss}">${V('stop')}</td>`;
+        rows += `<tr>${tr}</tr>`;
+      }
       low = `<table class="low" style="margin-top:-1px"><colgroup><col style="width:54px"><col><col style="width:54px"><col><col style="width:56px"><col style="width:36%"></colgroup>
-        <tr><td class="hd" colspan="4">站區分配</td><td class="hd" colspan="2">銷售異動</td></tr>
-        <tr><td class="lab">控：</td><td class="v">${esc(A['控'] || '')}</td><td class="lab">砧板：</td><td class="v">${esc(A['砧板'] || '')}</td><td class="lab" rowspan="2">推：</td><td class="v" rowspan="2">${V('push')}</td></tr>
-        <tr><td class="lab">烤箱：</td><td class="v">${esc(A['烤箱'] || '')}</td><td class="lab">爐台：</td><td class="v">${esc(A['爐台'] || '')}</td></tr>
-        <tr><td class="lab">機動：</td><td class="v">${esc(A['機動'] || '')}</td><td class="lab">煎：</td><td class="v">${esc(A['煎'] || '')}</td><td class="lab" rowspan="2">停：</td><td class="v" rowspan="2">${V('stop')}</td></tr>
-        <tr><td class="hd" colspan="4">員工餐</td></tr>
+        <tr><td class="hd" colspan="4">站區分配</td><td class="hd" colspan="2">銷售異動</td></tr>${rows}
         <tr><td class="v hand" colspan="4" rowspan="4" style="height:112px">${V('meal')}</td><td class="hd" colspan="2">開台</td></tr>
         <tr><td class="lab">煮湯</td><td><span class="v">${V('soup')}</span>　倍</td></tr>
         <tr><td class="lab">白飯</td><td><span class="v">${V('rice')}</span>　公克</td></tr>
@@ -349,6 +361,7 @@
     }
     return `<div class="sheet${blank ? ' blank' : ''}">${head}<table>${COLS}${th}${body}</table>${low}<div class="grow"></div></div>`;
   }
+  const lastPage = () => Math.max(1, ...stations().map((s) => s.page || 1));
   function sheetPages(d, blank) {
     const pages = [...new Set(stations().map((s) => s.page || 1))].sort();
     if (!pages.length) pages.push(1);
@@ -459,17 +472,23 @@
     el.innerHTML = `<div class="wrap">
       <p class="muted" style="margin-top:0">直接點欄位修改，會自動儲存。星期按「每」＝每天都要備；選星期（可複選）＝只有那幾天要備。份量欄留白時，假日沿用平日份量。</p>
       <div class="tbl-wrap"><table class="items-t"><thead><tr><th>品項</th><th>時段</th><th>星期</th><th>備料時間(分)</th><th>平日</th><th>假日</th><th>站區</th><th>排序</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
-      <h3>站區與交接檢查事項</h3>
-      <div class="bottom" style="margin-top:0">${stations().map((s) => `<div class="box" data-sid="${s.id}">
+      <h3 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">站區與交接檢查事項<button class="btn sm pri" data-act="addst">＋ 新增站區</button></h3>
+      <div class="bottom" style="margin-top:0">${stations().map((s, i, arr) => `<div class="box" data-sid="${s.id}">
+        <h3>${esc(s.name)}<span class="muted" style="font-size:13px;font-weight:normal">${itemsOf(s.id).length} 項</span>
+          <span style="margin-left:auto;display:flex;gap:4px"><button class="btn sm" data-act="stup" ${i ? '' : 'disabled'} title="往前移">↑</button><button class="btn sm" data-act="stdown" ${i < arr.length - 1 ? '' : 'disabled'} title="往後移">↓</button><button class="btn sm danger" data-act="stdel" title="刪除站區">✕ 刪除</button></span></h3>
         <div class="field"><label>站區名稱</label><input data-s="name" value="${esc(s.name)}"></div>
-        <div class="field"><label>印在第幾頁</label><select data-s="page"><option value="1"${s.page === 1 ? ' selected' : ''}>第 1 頁</option><option value="2"${s.page === 2 ? ' selected' : ''}>第 2 頁</option></select></div>
-        <div class="field"><label>交接檢查事項（每行一項）</label><textarea rows="3" data-s="checks">${esc(s.checks)}</textarea></div></div>`).join('')}</div></div>`;
+        <div class="field"><label>印在第幾頁</label><select data-s="page">${[1, 2, 3].map((n) => `<option value="${n}"${(s.page || 1) === n ? ' selected' : ''}>第 ${n} 頁</option>`).join('')}</select></div>
+        <div class="field"><label>交接檢查事項（每行一項）</label><textarea rows="3" data-s="checks">${esc(s.checks)}</textarea></div></div>`).join('') || '<p class="muted">還沒有站區，按「＋ 新增站區」。</p>'}</div>
+      <h3 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:22px">站區分配的位置<button class="btn sm pri" data-act="addas">＋ 新增位置</button></h3>
+      <p class="muted" style="margin-top:0">每天下方「站區分配」要填人的位置（例：控、砧板、烤箱）。交接表上兩個一列。</p>
+      <div class="box"><div class="aslist">${assignKeys().map((k, i) => `<span class="as" data-ai="${i}"><input data-as="${i}" value="${esc(k)}" aria-label="位置名稱"><button class="btn sm danger" data-act="asdel" title="刪除這個位置">✕</button></span>`).join('') || '<span class="muted">沒有位置</span>'}</div></div></div>`;
     const itemOf = (row) => db.items.find((x) => x.id === row.dataset.id);
     el.addEventListener('input', (e) => {
       const t = e.target, row = t.closest('tr[data-id]');
       if (row && t.dataset.f && t.tagName === 'INPUT') {
         const it = itemOf(row); it[t.dataset.f] = t.dataset.f === 'mins' ? (parseInt(t.value, 10) || 0) : t.value.trim(); it.at = now(); save();
       }
+      if (t.dataset.as !== undefined) { db.assign = assignKeys().slice(); db.assign[+t.dataset.as] = t.value.trim(); db.assignAt = now(); save(); return; }
       const box = t.closest('[data-sid]');
       if (box && t.dataset.s && t.tagName !== 'SELECT') { const s = stById(box.dataset.sid); s[t.dataset.s] = t.value; s.at = now(); save(); }
     });
@@ -478,6 +497,7 @@
       if (row && t.dataset.f === 'st') { const it = itemOf(row); it.st = t.value; it.ord = Math.max(0, ...itemsOf(t.value).map((x) => x.ord)) + 1; it.at = now(); save(); route(); }
       const box = t.closest('[data-sid]');
       if (box && t.dataset.s === 'page') { const s = stById(box.dataset.sid); s.page = +t.value; s.at = now(); save(); }
+      if (t.dataset.as !== undefined) route();
       if (box && t.dataset.s === 'name') route();
     });
     el.addEventListener('click', (e) => {
@@ -490,6 +510,37 @@
         it.at = now(); save(); route(); return;
       }
       const a = b.dataset.act;
+      const box = b.closest('[data-sid]'), st = box && stById(box.dataset.sid);
+      if (a === 'addst') {
+        const sts = stations();
+        const id = uid();
+        db.stations.push({ id, name: '新站區', page: lastPage(), checks: '', ord: (sts.length ? sts[sts.length - 1].ord : 0) + 1, deleted: false, at: now() });
+        save(); route();
+        const inp = $(`[data-sid="${id}"] input[data-s=name]`); if (inp) { inp.scrollIntoView({ block: 'center' }); inp.focus(); inp.select(); }
+        return;
+      }
+      if (a === 'stdel' && st) {
+        const n = itemsOf(st.id).length;
+        if (!confirm(`刪除站區「${st.name}」${n ? `和裡面的 ${n} 個品項` : ''}？\n（之前日誌裡的記錄會保留）`)) return;
+        st.deleted = true; st.at = now();
+        itemsOf(st.id).forEach((it) => { it.deleted = true; it.at = now(); });
+        save(); route(); toast(`已刪除站區「${st.name}」`); return;
+      }
+      if ((a === 'stup' || a === 'stdown') && st) {
+        const sts = stations(), i = sts.indexOf(st), j = a === 'stup' ? i - 1 : i + 1;
+        if (sts[j]) { sts.forEach((x, k) => { x.ord = k + 1; }); [st.ord, sts[j].ord] = [sts[j].ord, st.ord]; st.at = sts[j].at = now(); save(); route(); }
+        return;
+      }
+      if (a === 'addas') {
+        db.assign = assignKeys().concat('新位置'); db.assignAt = now(); save(); route();
+        const ins = $$('input[data-as]'); const inp = ins[ins.length - 1]; if (inp) { inp.focus(); inp.select(); }
+        return;
+      }
+      if (a === 'asdel') {
+        const i = +b.closest('[data-ai]').dataset.ai, keys = assignKeys();
+        if (!confirm(`刪除站區分配的位置「${keys[i]}」？`)) return;
+        keys.splice(i, 1); db.assign = keys; db.assignAt = now(); save(); route(); return;
+      }
       if (a === 'add') {
         const its = itemsOf(b.dataset.st), last = its[its.length - 1];
         db.items.push({ id: uid(), st: b.dataset.st, time: last ? last.time : '', days: '', name: '新品項', mins: 0, wd: '', hd: '', ord: (last ? last.ord : 0) + 1, deleted: false, at: now() });
@@ -537,8 +588,8 @@
         };
         f.click();
       }
-      if (a === 'reset' && confirm('品項和站區還原成紙本預設？（每天的備料記錄會保留，但自己新增的品項會被刪除）')) {
-        const s = seed(); db.stations = s.stations; db.items = s.items; save(); toast('已還原'); route();
+      if (a === 'reset' && confirm('品項、站區和站區分配的位置還原成紙本預設？（每天的備料記錄會保留，但自己新增的品項會被刪除）')) {
+        const s = seed(); db.stations = s.stations; db.items = s.items; delete db.assign; db.assignAt = now(); save(); toast('已還原'); route();
       }
     });
   }
