@@ -12,12 +12,12 @@
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="stylesheet" href="portal.css?v=3">
-<link rel="stylesheet" href="auth.css?v=1">
+<link rel="stylesheet" href="auth.css?v=2">
 </head>
 <body>
 <header class="top">
   <div class="brand"><img src="icons/icon-192.png" alt=""><div><b id="shop">廚房專用表格系統</b><small id="today"></small></div></div>
-  <div class="top-r"><button id="who" class="ghost who" title="帳號"></button><button id="refresh" class="ghost" title="重新整理數字（F5）">⟳ 更新</button></div>
+  <div class="top-r"><button id="cloudbtn" class="ghost who" title="Google 雲端同步設定">☁️ 同步</button><button id="who" class="ghost who" title="帳號"></button><button id="refresh" class="ghost" title="重新整理數字（F5）">⟳ 更新</button></div>
 </header>
 <main id="app">
   <section class="cards" id="cards"><p class="empty">載入中…</p></section>
@@ -25,9 +25,12 @@
 </main>
 <div id="toast" class="toast" hidden></div>
 <script src="config.js?v=1"></script>
+<script src="fridge/config.js"></script>
+<script src="dish/config.js"></script>
 <script src="meal/js/core.js?v=1"></script>
 <script src="auth.js?v=2"></script>
-<script src="auth-ui.js?v=1"></script>
-<script src="portal.js?v=7"></script>
+<script src="auth-ui.js?v=2"></script>
+<script src="cloud-ui.js?v=1"></script>
+<script src="portal.js?v=8"></script>
 </body>
 </html>
