@@ -11,7 +11,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="portal.css?v=8">
+<link rel="stylesheet" href="portal.css?v=9">
 <link rel="stylesheet" href="auth.css?v=4">
 </head>
 <body>
@@ -20,6 +20,7 @@
   <div class="top-r"><button id="cloudbtn" class="ghost who" title="Google 雲端同步設定" aria-label="雲端同步"><span class="i">☁️</span><span class="t">同步</span></button><button id="who" class="ghost who" title="帳號"></button><button id="refresh" class="ghost" title="重新整理數字（F5）" aria-label="更新"><span class="i">⟳</span><span class="t">更新</span></button></div>
 </header>
 <main id="app">
+  <section class="hero" id="hero" hidden></section>
   <section class="cards" id="cards"><p class="empty">載入中…</p></section>
   <p class="foot" id="foot"></p>
 </main>
@@ -32,6 +33,6 @@
 <script src="auth.js?v=7"></script>
 <script src="auth-ui.js?v=8"></script>
 <script src="cloud-ui.js?v=4"></script>
-<script src="portal.js?v=18"></script>
+<script src="portal.js?v=19"></script>
 </body>
 </html>
