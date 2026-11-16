@@ -108,12 +108,13 @@
       location.reload(); // 設備管家重新開啟時就直接進去了
     })().catch(done);
   }
-  // 水電瓦斯抄表：不用它自己的登入畫面，用管理者在首頁「雲端同步」分發的帳號自動登入
-  // （雲端回 401 時，build_web.py 加的小程式會發出 kf-energy-401；沒有分發帳號就照原本的登入畫面）
+  // 水電瓦斯抄表：不用它自己的登入畫面，用管理者在首頁「雲端同步」分發的同步密碼自動登入
+  // （雲端回 401 時，build_web.py 加的小程式會發出 kf-energy-401；登入時帳號填 __kitchen__，那個小程式會改成用同步密碼登入；
+  //   沒有分發就照原本的登入畫面）
   function energyAuto() {
     let want = null;
     try { want = (JSON.parse(localStorage.getItem('kitchenforms-cloud')) || {}).energy || null; } catch (e) { want = null; }
-    if (!want || want.off || !want.user || !want.pw) return;
+    if (!want || want.off || !want.pw) return;
     const hide = document.createElement('style');
     hide.textContent = '#loginOverlay{visibility:hidden!important} #mLogout{display:none!important}';
     document.head.append(hide);
@@ -130,14 +131,14 @@
       if (!u || !p || !f) { busy = false; show(); return; }
       let last = null; try { last = localStorage.getItem('bitan_last_username_v1'); } catch (e) { /* */ }
       const rem = document.getElementById('loginRemember'); if (rem) rem.checked = !!last;
-      u.value = want.user; p.value = want.pw;
+      u.value = '__kitchen__'; p.value = want.pw;
       if (f.requestSubmit) f.requestSubmit(); else f.dispatchEvent(new Event('submit', { cancelable: true }));
       p.value = '';
       const err = document.getElementById('loginError');
       for (let i = 0; i < 150 && ov.classList.contains('open') && !(err && err.classList.contains('show')); i++) await new Promise((r) => setTimeout(r, 200));
       try { if (last == null) localStorage.removeItem('bitan_last_username_v1'); else localStorage.setItem('bitan_last_username_v1', last); } catch (e) { /* 不動原本記住的帳號 */ }
       busy = false;
-      if (ov.classList.contains('open')) { tries = 9; show(); } else tries = 0; // 登入失敗（密碼被改了等）：馬上顯示原本的登入畫面
+      if (ov.classList.contains('open')) { tries = 9; u.value = last || ''; show(); } else tries = 0; // 登入失敗（密碼被改了等）：馬上顯示原本的登入畫面
     }
     window.addEventListener('kf-energy-401', login);
     if (window.__kfE401 && ov.classList.contains('open')) login();
