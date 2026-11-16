@@ -64,6 +64,7 @@ const ctx = {
   Session: { getScriptTimeZone: () => 'Asia/Taipei' },
   SpreadsheetApp: { getActive: () => ss, getActiveSpreadsheet: () => ss },
   Logger: { log: console.log },
+  CacheService: { getScriptCache: () => { const m = (global.__kfCache = global.__kfCache || {}); return { get: (k) => (k in m ? m[k] : null), put: (k, v) => { m[k] = v; }, remove: (k) => { delete m[k]; } }; } },
   console,
 };
 vm.createContext(ctx);

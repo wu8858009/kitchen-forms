@@ -30,6 +30,10 @@ function doPost(e) {
   try {
     const a = q.action;
     if (a === 'status') return out_(status_());
+    // 只讀的請求不用排隊（每台裝置會定時問，排隊會互相卡住、變慢甚至逾時）
+    if (a === 'me') return out_(withMe_(q, (me) => ({ ok: true, me: pub_(me), cloud: cloudFor_(me) })));
+    if (a === 'prep_rev') return out_(withMe_(q, (me) => (me.role === 'admin' || me.perms.prep ? { ok: true, rev: Number(PropertiesService.getScriptProperties().getProperty('PREP_REV') || 0) } : { ok: false, code: 'perm', error: '你沒有備料交接日誌的權限' })));
+    if (a === 'list') return out_(withAdmin_(q, () => ({ ok: true, people: people_().map(pub_), sheet: SpreadsheetApp.getActive().getUrl() })));
     const lock = LockService.getScriptLock();
     lock.waitLock(20000);
     try {
@@ -186,17 +190,35 @@ function issue_(p, dev) {
   const token = Utilities.getUuid() + Utilities.getUuid().slice(0, 8);
   const sh = sheet_(SH_DEV, DEV_HEAD), now = new Date();
   sh.getRange(sh.getLastRow() + 1, 1, 1, DEV_HEAD.length).setValues([[token, p.name, fmt_(now), String(dev || '').slice(0, 120), fmt_(now)]]);
+  cacheDel_('kf_devs');
   return { ok: true, token, me: pub_(p), cloud: cloudFor_(p) };
 }
-function withMe_(q, fn) {
+// ------------------------------------------------------------------ 快取（讀試算表很慢，常用的資料記 30 秒）
+function cacheGet_(k) { try { const v = CacheService.getScriptCache().get(k); return v ? JSON.parse(v) : null; } catch (e) { return null; } }
+function cachePut_(k, v, s) { try { CacheService.getScriptCache().put(k, JSON.stringify(v), s || 30); } catch (e) { /* 太大就不快取 */ } }
+function cacheDel_(k) { try { CacheService.getScriptCache().remove(k); } catch (e) { /* */ } }
+function devRows_() {
+  const c = cacheGet_('kf_devs');
+  if (c) return c;
   const sh = sheet_(SH_DEV, DEV_HEAD), n = sh.getLastRow() - 1;
-  const rows = n > 0 ? sh.getRange(2, 1, n, DEV_HEAD.length).getValues() : [];
+  const rows = (n > 0 ? sh.getRange(2, 1, n, DEV_HEAD.length).getValues() : []).map((r) => r.map((x) => (x instanceof Date ? x.toISOString() : x)));
+  cachePut_('kf_devs', rows);
+  return rows;
+}
+function withMe_(q, fn) {
+  const rows = devRows_();
   const i = rows.findIndex((r) => String(r[0]) === String(q.token || '') && q.token);
   if (i < 0) return { ok: false, code: 'auth', error: '請重新登入' };
   const me = people_().find((p) => p.name === String(rows[i][1]));
   if (!me || me.off) { delTokens_((r) => r[0] === q.token); return { ok: false, code: 'auth', error: me ? '帳號已停用' : '帳號已被刪除' }; }
   const last = Date.parse(String(rows[i][4]).replace(' ', 'T')) || 0;
-  if (Date.now() - last > 3600 * 1000) sh.getRange(i + 2, 5).setValues([[fmt_(new Date())]]);
+  if (Date.now() - last > 3600 * 1000) { // 每小時最多記一次「最後使用」
+    const sh = sheet_(SH_DEV, DEV_HEAD), n = sh.getLastRow() - 1;
+    const live = n > 0 ? sh.getRange(2, 1, n, 1).getValues() : [];
+    const j = live.findIndex((r) => String(r[0]) === String(q.token));
+    if (j >= 0) sh.getRange(j + 2, 5).setValues([[fmt_(new Date())]]);
+    cacheDel_('kf_devs');
+  }
   return fn(me);
 }
 function withAdmin_(q, fn) { return withMe_(q, (me) => (me.role === 'admin' ? fn(me) : { ok: false, error: '只有管理者可以管理權限' })); }
@@ -207,6 +229,7 @@ function renameTokens_(from, to) {
   let hit = false;
   rows.forEach((r) => { if (String(r[1]) === from) { r[1] = to; hit = true; } });
   if (hit) sh.getRange(2, 1, n, DEV_HEAD.length).setValues(rows);
+  cacheDel_('kf_devs');
 }
 function delTokens_(match) {
   const sh = sheet_(SH_DEV, DEV_HEAD), n = sh.getLastRow() - 1;
@@ -216,10 +239,18 @@ function delTokens_(match) {
   if (keep.length === rows.length) return;
   sh.getRange(2, 1, n, DEV_HEAD.length).clearContent();
   if (keep.length) sh.getRange(2, 1, keep.length, DEV_HEAD.length).setValues(keep);
+  cacheDel_('kf_devs');
 }
 
 // ------------------------------------------------------------------ 人員分頁
 function people_() {
+  const c = cacheGet_('kf_people');
+  if (c) return c;
+  const r = readPeople_();
+  cachePut_('kf_people', r);
+  return r;
+}
+function readPeople_() {
   const sh = sheet_(SH_PEOPLE, HEAD), n = sh.getLastRow() - 1;
   if (n <= 0) return [];
   const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(String);
@@ -232,6 +263,7 @@ function people_() {
   });
 }
 function writePeople_(ps) {
+  cacheDel_('kf_people');
   const sh = sheet_(SH_PEOPLE, HEAD), n = Math.max(0, sh.getLastRow() - 1);
   const w = Math.max(HEAD.length, sh.getLastColumn());
   if (n) sh.getRange(2, 1, n, w).clearContent();

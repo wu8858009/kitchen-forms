@@ -1,7 +1,7 @@
 /* 廚房專用表格系統 — 首頁儀表板：冰箱溫度、備料交接、菜品銷售、員工餐四個系統的入口與今日重點 */
 (() => {
   'use strict';
-  const VERSION = '1.12.0';
+  const VERSION = '1.12.1';
   const DESK = new URLSearchParams(location.search).has('desktop');
   const Q = DESK ? '?desktop=1' : '';
   const $ = (s, r = document) => r.querySelector(s);
@@ -389,6 +389,7 @@
   // 有權限、有開雲端同步的系統，放在看不到的小框架裡執行：它們會自己跟雲端同步（冰箱、菜品每 15 秒，備料每 10 秒），
   // 存到這台裝置；首頁每 10 秒看資料有沒有變，有變就更新數字。別台（例如管理者）改了資料，不用重新打開就會出現。
   const BG = {};
+  let bgStarted = false;
   function bgFrames(d) {
     if (DESK || !location.protocol.startsWith('http')) return;
     const s = AUTH.get();
@@ -401,14 +402,22 @@
       sop: AUTH.can('sop') && (!!(d.sop && d.sop.cloud) || has('sop')),
       equip: AUTH.can('equip') && (has('equip') || (() => { try { const g = JSON.parse(localStorage.getItem('sg_sync')); return !!(g && g.enabled); } catch (e) { return false; } })()),
     };
+    // 一次只載入一個，前一個載入完 2 秒後再載下一個（同時載入好幾個系統，手機會變慢）
+    let delay = bgStarted ? 0 : 2500;
     for (const [m, on] of Object.entries(want)) {
       if (on && !BG[m]) {
-        const f = document.createElement('iframe');
-        f.src = `${m}/index.html?bg=1`; f.className = 'bg-sync'; f.tabIndex = -1;
-        f.setAttribute('aria-hidden', 'true'); f.title = '背景同步';
-        document.body.append(f); BG[m] = f;
-      } else if (!on && BG[m]) { BG[m].remove(); delete BG[m]; }
+        BG[m] = 'pending';
+        setTimeout(() => {
+          if (BG[m] !== 'pending') return;
+          const f = document.createElement('iframe');
+          f.src = `${m}/index.html?bg=1`; f.className = 'bg-sync'; f.tabIndex = -1;
+          f.setAttribute('aria-hidden', 'true'); f.title = '背景同步';
+          document.body.append(f); BG[m] = f;
+        }, delay);
+        delay += 3000;
+      } else if (!on && BG[m]) { if (BG[m] !== 'pending') BG[m].remove(); delete BG[m]; }
     }
+    bgStarted = true;
   }
   // 只比資料本身（不比同步時間），沒變就不重畫
   const snapOf = (d) => [d.fridge, d.dish, d.prep, d.sop, d.equip].map((x) => (x ? JSON.stringify(x, (k, v) => (k === 'cloud' || k === '_sync' || k === 'sync' || k === 'meAct' ? undefined : v)) : '-')).join('|');
@@ -490,6 +499,7 @@
   setInterval(() => {
     if (document.hidden) return;
     for (const [m, f] of Object.entries(BG)) {
+      if (f === 'pending') continue;
       try {
         const w = f.contentWindow;
         if (m === 'fridge' && w.__fridge && w.__fridge.Cloud) w.__fridge.Cloud.tick();
@@ -497,7 +507,7 @@
         if (m === 'prep' && w.__prep && w.__prep.poll) w.__prep.poll();
       } catch (e) { /* 框架還在載入 */ }
     }
-  }, 5000);
+  }, 10000);
   async function render(force) {
     if (dragging) return; // 拖曳中不要重畫
     const now = new Date();
