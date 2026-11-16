@@ -1,7 +1,7 @@
 /* 廚房專用表格系統 — 首頁儀表板：冰箱溫度、備料交接、菜品銷售、員工餐四個系統的入口與今日重點 */
 (() => {
   'use strict';
-  const VERSION = '1.10.0';
+  const VERSION = '1.11.0';
   const DESK = new URLSearchParams(location.search).has('desktop');
   const Q = DESK ? '?desktop=1' : '';
   const $ = (s, r = document) => r.querySelector(s);
@@ -339,7 +339,7 @@
   }
 
   function card(cls, ic, title, sub, body, foot) {
-    return `<article class="card ${cls}"><div class="card-h"><div class="ic">${ic}</div><h2>${title}<small>${sub}</small></h2></div>
+    return `<article class="card ${cls}" data-mod="${cls}"><div class="card-h"><div class="ic">${ic}</div><h2>${title}<small>${sub}</small></h2><button class="drag" type="button" aria-label="拖曳調整順序" title="按住拖曳，調整卡片順序">⠿</button></div>
       <div class="card-b">${body}</div><div class="card-f">${foot}</div></article>`;
   }
 
@@ -389,8 +389,63 @@
   const snapOf = (d) => [d.fridge, d.dish, d.prep, d.sop, d.equip].map((x) => (x ? JSON.stringify(x, (k, v) => (k === 'cloud' || k === '_sync' || k === 'sync' || k === 'meAct' ? undefined : v)) : '-')).join('|');
   // 每 3 秒看這台裝置的資料（原始文字沒變就不解析，很省電）；有變就更新首頁
   let lastRaw = '';
+  // ------------------------------------------------------------------ 拖曳排列卡片
+  const LS_ORDER = 'kitchenforms-order';
+  const cardOrder = () => { try { return JSON.parse(localStorage.getItem(LS_ORDER)) || []; } catch (e) { return []; } };
+  let dragging = false;
+  document.addEventListener('pointerdown', (e) => {
+    const h = e.target.closest('#cards .card .drag');
+    if (!h || e.button > 0) return;
+    e.preventDefault();
+    const card = h.closest('.card'), box = $('#cards'), r = card.getBoundingClientRect(), scroller = $('#app');
+    dragging = true;
+    const ph = document.createElement('div');
+    ph.className = 'card-ph'; ph.style.height = r.height + 'px';
+    box.insertBefore(ph, card);
+    const dx = e.clientX - r.left, dy = e.clientY - r.top;
+    Object.assign(card.style, { position: 'fixed', left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px', zIndex: 60, pointerEvents: 'none' });
+    card.classList.add('dragging');
+    let lastY = e.clientY, raf = 0;
+    const cols = () => getComputedStyle(box).gridTemplateColumns.split(' ').filter(Boolean).length;
+    const place = (x, y) => {
+      card.style.left = (x - dx) + 'px'; card.style.top = (y - dy) + 'px';
+      const el = document.elementFromPoint(x, y);
+      const over = el && el.closest('#cards > .card:not(.dragging), #cards > .card-ph');
+      if (!over || over === ph) return;
+      const o = over.getBoundingClientRect();
+      const before = cols() > 1 && y > o.top && y < o.bottom ? x < o.left + o.width / 2 : y < o.top + o.height / 2;
+      box.insertBefore(ph, before ? over : over.nextSibling);
+    };
+    // 拖到畫面上下邊緣時自動捲動
+    const edge = () => {
+      const sr = scroller.getBoundingClientRect(), m = 70;
+      if (lastY < sr.top + m) scroller.scrollTop -= 12; else if (lastY > sr.bottom - m) scroller.scrollTop += 12;
+      raf = dragging ? requestAnimationFrame(edge) : 0;
+    };
+    raf = requestAnimationFrame(edge);
+    const move = (ev) => { lastY = ev.clientY; place(ev.clientX, ev.clientY); };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      cancelAnimationFrame(raf);
+      ph.replaceWith(card);
+      card.removeAttribute('style'); card.classList.remove('dragging');
+      dragging = false;
+      // 存這台裝置的順序：看得到的卡片照新順序，看不到的（沒權限）維持原本相對位置排在後面
+      const shown = [...box.querySelectorAll(':scope > .card')].map((c) => c.dataset.mod);
+      const old = cardOrder().filter((m) => !shown.includes(m));
+      try { localStorage.setItem(LS_ORDER, JSON.stringify(shown.concat(old))); } catch (err) { /* */ }
+      cardsHtml = $('#cards').innerHTML === cardsHtml ? cardsHtml : '';
+      render();
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+  });
+
   async function watchLocal() {
-    if (document.hidden || $('.adm, .auth-screen, .modal-bg')) return;
+    if (document.hidden || dragging || $('.adm, .auth-screen, .modal-bg')) return;
     try {
       if (DESK) { const d = await loadLocal(); if (snapOf(d) !== snap) render(); }
       else {
@@ -419,6 +474,7 @@
     }
   }, 5000);
   async function render(force) {
+    if (dragging) return; // 拖曳中不要重畫
     const now = new Date();
     const todayT = `${now.getFullYear()}/${now.getMonth() + 1}/${now.getDate()}（${WD[now.getDay()]}）`;
     if ($('#today').textContent !== todayT) $('#today').textContent = todayT;
@@ -435,6 +491,9 @@
     if ($('#shop').textContent !== shopT) $('#shop').textContent = shopT;
     // 只顯示這個人有權限的系統
     const cards = [['fridge', () => fridgeCard(fs)], ['prep', () => prepCard(ps)], ['dish', () => dishCard(ds)], ['meal', () => mealCard(ms, mi)], ['sop', () => sopCard(ss)], ['equip', () => equipCard(es)]].filter(([m]) => AUTH.can(m));
+    // 依這台裝置自己排的順序（拖曳卡片右上角的 ⠿）
+    const ord = cardOrder(), at = (m, i) => { const k = ord.indexOf(m); return k < 0 ? 100 + i : k; };
+    cards.forEach((c, i) => { c[2] = at(c[0], i); }); cards.sort((a, b) => a[2] - b[2]);
     const html = cards.map(([, f]) => f()).join('')
       || `<div class="no-perm">🔒 你目前沒有任何系統的權限。<br>請管理者在「人員與權限」幫你勾選可以使用的系統。</div>`;
     // 只有內容真的變了才重畫（沒改資料就不會閃一下）
