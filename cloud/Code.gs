@@ -6,6 +6,9 @@
  * PIN 碼只存雜湊（加上只有這個指令碼知道的 SALT），試算表看不到 PIN。
  * 第一位管理者由第一次打開網頁的人建立（setup），之後只有管理者能新增、修改人員。
  *
+ * 各系統的雲端連線（網址、密碼）由管理者設定一次，存在指令碼屬性 CLOUD_CFG；登入的人會自動拿到自己有權限的系統的設定，
+ *   不用每台裝置、每個系統再輸入密碼（cloud_set）。
+ *
  * 分頁「備料資料」：備料交接日誌的資料，所有裝置共用（prep_sync）。每個設定、品項、每天每一格各一列，
  * 「版本」越大越新；裝置只下載自己上次同步後有變動的列。值是 JSON，請不要手動修改。
  */
@@ -32,7 +35,8 @@ function doPost(e) {
     try {
       if (a === 'setup') return out_(setup_(q));
       if (a === 'login') return out_(login_(q));
-      if (a === 'me') return out_(withMe_(q, (me) => ({ ok: true, me: pub_(me) })));
+      if (a === 'me') return out_(withMe_(q, (me) => ({ ok: true, me: pub_(me), cloud: cloudFor_(me) })));
+      if (a === 'cloud_set') return out_(withAdmin_(q, (me) => cloudSet_(me, q)));
       if (a === 'logout') { delTokens_((r) => r[0] === q.token); return out_({ ok: true }); }
       if (a === 'pin') return out_(withMe_(q, (me) => changePin_(me, q)));
       if (a === 'list') return out_(withAdmin_(q, () => ({ ok: true, people: people_().map(pub_), sheet: SpreadsheetApp.getActive().getUrl() })));
@@ -156,12 +160,33 @@ function prepSync_(me, q) {
   return { ok: true, rev, rows: out };
 }
 
+// ------------------------------------------------------------------ 各系統的雲端連線（管理者分發）
+const CLOUD_MODS = ['fridge', 'dish', 'meal', 'sop'];
+function cloudGet_() { try { return JSON.parse(PropertiesService.getScriptProperties().getProperty('CLOUD_CFG') || '{}'); } catch (e) { return {}; } }
+function cloudFor_(me) {
+  const c = cloudGet_(), out = {};
+  CLOUD_MODS.forEach((m) => { if (c[m] && (me.role === 'admin' || (me.perms || {})[m])) out[m] = c[m]; });
+  return out;
+}
+function cloudSet_(me, q) {
+  const m = String(q.mod || '');
+  if (CLOUD_MODS.indexOf(m) < 0) return { ok: false, error: '不認得的系統：' + m };
+  const c = cloudGet_();
+  if (q.cfg && q.cfg.url) {
+    const x = { url: String(q.cfg.url).slice(0, 300), at: Date.now(), by: me.name };
+    if (m === 'sop') x.key = String(q.cfg.key || ''); else x.pw = String(q.cfg.pw || '');
+    c[m] = x;
+  } else delete c[m];
+  PropertiesService.getScriptProperties().setProperty('CLOUD_CFG', JSON.stringify(c));
+  return { ok: true, cloud: cloudFor_(me) };
+}
+
 // ------------------------------------------------------------------ 登入裝置
 function issue_(p, dev) {
   const token = Utilities.getUuid() + Utilities.getUuid().slice(0, 8);
   const sh = sheet_(SH_DEV, DEV_HEAD), now = new Date();
   sh.getRange(sh.getLastRow() + 1, 1, 1, DEV_HEAD.length).setValues([[token, p.name, fmt_(now), String(dev || '').slice(0, 120), fmt_(now)]]);
-  return { ok: true, token, me: pub_(p) };
+  return { ok: true, token, me: pub_(p), cloud: cloudFor_(p) };
 }
 function withMe_(q, fn) {
   const sh = sheet_(SH_DEV, DEV_HEAD), n = sh.getLastRow() - 1;

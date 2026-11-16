@@ -1,7 +1,8 @@
-/* 廚房專用表格系統 — 首頁「雲端同步」統一設定
- * 冰箱、菜品：網址和密碼存在 localStorage 'kitchenforms-cloud'，打開那個系統時由 kitchen-nav.js 用它自己的連線流程完成連線。
- * 員工餐：直接寫進 'kitchenforms-meal'（員工餐網頁版和首頁都讀這個）。
- * 備料交接日誌：用首頁登入的帳號自動同步，不用另外設定。 */
+/* 廚房專用表格系統 — 首頁「雲端同步」統一設定（管理者）
+ * 管理者在這裡設定一次各系統的雲端網址和密碼，就會「分發」到權限後端：
+ * 其他人登入首頁後自動拿到自己有權限的系統的設定（KitchenAuth.applyCloud），不用再輸入密碼。
+ * 冰箱、菜品、SOP：存在 localStorage 'kitchenforms-cloud'，打開（或首頁背景執行）時由 kitchen-nav.js 用各系統自己的連線流程連上。
+ * 員工餐：直接寫進 'kitchenforms-meal'。備料交接日誌：用登入的帳號自動同步。 */
 (() => {
   'use strict';
   const $ = (s, r = document) => r.querySelector(s);
@@ -9,41 +10,51 @@
   const LS = 'kitchenforms-cloud', LSM = 'kitchenforms-meal';
   const DESK = new URLSearchParams(location.search).has('desktop');
   const Q = DESK ? '?desktop=1' : '';
+  // sec：密碼欄位的名稱（SOP 叫 key）；body：驗證用的請求（SOP 用 rev，不會把密碼「認領」掉）
   const SYS = [
-    { k: 'fridge', name: '冰箱溫度記錄表', ic: '🌡️', def: () => window.FRIDGE_CLOUD_URL || '', body: (pw) => ({ a: 'ping', pw }) },
-    { k: 'dish', name: '菜品銷售紀錄', ic: '🍱', def: () => window.DISH_CLOUD_URL || '', body: (pw) => ({ a: 'ping', pw }) },
-    { k: 'meal', name: '員工餐金額總計', ic: '🍚', def: () => window.MEAL_CLOUD_URL || '', body: (pw) => ({ action: 'ping', pw }) },
+    { k: 'fridge', name: '冰箱溫度記錄表', ic: '🌡️', sec: 'pw', def: () => window.FRIDGE_CLOUD_URL || '', body: (v) => ({ a: 'ping', pw: v }) },
+    { k: 'dish', name: '菜品銷售紀錄', ic: '🍱', sec: 'pw', def: () => window.DISH_CLOUD_URL || '', body: (v) => ({ a: 'ping', pw: v }) },
+    { k: 'meal', name: '員工餐金額總計', ic: '🍚', sec: 'pw', def: () => window.MEAL_CLOUD_URL || '', body: (v) => ({ action: 'ping', pw: v }) },
+    { k: 'sop', name: '廚房 SOP 食譜', ic: '📖', sec: 'key', def: () => window.KSOP_CLOUD_URL || '', body: (v) => ({ a: 'rev', key: v }) },
   ];
   const read = (k) => { try { return JSON.parse(localStorage.getItem(k)) || null; } catch (e) { return null; } };
   const write = (k, v) => { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* 無痕模式 */ } };
+  const A = () => window.KitchenAuth;
+  const data = (k) => (window.__kitchen && window.__kitchen.data || {})[k];
   function toast(msg, ms = 2800) {
     const t = $('#toast'); t.textContent = msg; t.hidden = false;
     clearTimeout(toast.t); toast.t = setTimeout(() => { t.hidden = true; }, ms);
   }
-  // 這台裝置目前的設定（首頁統一設定 → 沒有的話看各系統自己的設定）
+  // 這台裝置目前的設定（首頁設定 → 沒有的話看各系統自己連線時的設定）
   function conf(k) {
+    const x = SYS.find((s) => s.k === k);
     if (k === 'meal') { const m = read(LSM); return m && m.pw ? { url: m.url || window.MEAL_CLOUD_URL, pw: m.pw } : null; }
     const c = (read(LS) || {})[k];
-    if (c && !c.off) return c;
-    const d = (window.__kitchen && window.__kitchen.data || {})[k], own = d && d.cloud;
+    if (c && !c.off && c[x.sec]) return c;
+    const own = (data(k) || {}).cloud;
+    if (k === 'sop') return own && own.url && own.key ? { url: own.url, key: own.key, own: true } : null;
     return own && own.on && own.url && own.pw ? { url: own.url, pw: own.pw, own: true } : null;
   }
   function status(k) {
     if (k === 'meal') return conf('meal') ? ['ok', '已設定'] : ['', '未設定'];
-    const d = (window.__kitchen && window.__kitchen.data || {})[k], own = d && d.cloud, want = (read(LS) || {})[k];
-    if (want && want.off) return own && own.on ? ['warn', '下次打開時停用'] : ['', '已停用'];
-    if (want && !(own && own.on && own.url === want.url && own.pw === want.pw)) return ['warn', '下次打開這個系統時完成連線'];
-    if (own && own.on) {
-      const t = own.lastOk ? new Date(own.lastOk) : null;
+    const own = (data(k) || {}).cloud, want = (read(LS) || {})[k];
+    const on = k === 'sop' ? !!(own && own.url) : !!(own && own.on);
+    if (want && want.off) return on ? ['warn', '下次打開時停用'] : ['', '已停用'];
+    if (want && !(on && own.url === want.url && (k === 'sop' ? own.key === want.key : own.pw === want.pw))) return ['warn', '打開這個系統時會自動連線'];
+    if (on) {
+      const ts = k === 'sop' ? (data(k).sync || {}).at : own.lastOk, t = ts ? new Date(ts) : null;
       return ['ok', t ? `已連線・最後同步 ${t.getMonth() + 1}/${t.getDate()} ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}` : '已連線'];
     }
     return ['', '未連線'];
   }
-  async function ping(s, url, pw) {
+  // 分發狀態（權限後端存的那一份）
+  const shared = () => { const s = A() && A().get(); return (s && s.cloud) || {}; };
+  const canShare = () => !!(A() && A().on && A().isAdmin());
+  async function ping(x, url, v) {
     const ac = window.AbortController ? new AbortController() : null;
     const to = setTimeout(() => ac && ac.abort(), 30000);
     try {
-      const res = await fetch(url, { method: 'POST', body: JSON.stringify(s.body(pw)), headers: { 'Content-Type': 'text/plain;charset=utf-8' }, signal: ac ? ac.signal : undefined });
+      const res = await fetch(url, { method: 'POST', body: JSON.stringify(x.body(v)), headers: { 'Content-Type': 'text/plain;charset=utf-8' }, signal: ac ? ac.signal : undefined });
       const t = await res.text();
       let j; try { j = JSON.parse(t); } catch (e) { throw new Error('雲端回應格式不對（網址正確嗎？）'); }
       if (!j.ok) throw new Error(j.err || j.error || '密碼不對或雲端錯誤');
@@ -53,6 +64,13 @@
       if (e instanceof TypeError) throw new Error('無法連線（請檢查網路或網址）');
       throw e;
     } finally { clearTimeout(to); }
+  }
+  // 存到權限後端，所有有權限的人自動拿到
+  async function share(k, cfg) {
+    const s = A().get();
+    const r = await A().call('cloud_set', { token: s.token, mod: k, cfg });
+    if (!r.ok) throw new Error(r.error || '分發失敗');
+    s.cloud = r.cloud; A().set(s);
   }
 
   let ov = null;
@@ -66,25 +84,28 @@
     draw();
   }
   function draw() {
-    const A = window.KitchenAuth, s = A && A.get();
-    const prep = !A || !A.url ? ['', '未啟用'] : s && s.token ? ['ok', `用「${s.me && s.me.name}」的帳號自動同步`] : DESK ? ['', '在備料交接日誌的「設定」登入後同步'] : ['warn', '登入首頁後自動同步'];
-    $('.adm-b', ov).innerHTML = `<p class="adm-tip">在這裡一次設定所有系統的 Google 雲端同步，各系統不用再分別設定。每個系統有自己的 Google 試算表和密碼（就是當初在各系統設定的那組）。這些設定存在這台裝置；每台手機、平板、電腦第一次使用時都要在這裡設定一次。</p>
-      <div class="pp cl-all"><div class="pp-h"><b>🔑 三個系統用同一組密碼？</b></div>
+    const s = A() && A().get(), sh = shared(), admin = canShare();
+    const prep = !A() || !A().url ? ['', '未啟用'] : s && s.token ? ['ok', `用「${s.me && s.me.name}」的帳號自動同步`] : DESK ? ['', '在備料交接日誌的「設定」登入後同步'] : ['warn', '登入首頁後自動同步'];
+    const missing = SYS.filter((x) => conf(x.k) && !(sh[x.k] && sh[x.k].url === conf(x.k).url && sh[x.k][x.sec] === conf(x.k)[x.sec]));
+    $('.adm-b', ov).innerHTML = `<p class="adm-tip">${admin
+      ? '在這裡設定一次各系統的雲端網址和密碼，就會<b>自動分發給所有有權限的人</b>：他們登入首頁後，手機、平板、電腦都會自動連上，不用再輸入任何密碼。'
+      : '在這裡設定這台裝置各系統的 Google 雲端同步。若管理者已經分發設定，登入後會自動連上，不用自己輸入。'}</p>
+      ${admin && missing.length ? `<div class="pp cl-all"><div class="pp-h"><b>📤 這台已連線、但還沒分發的系統：${missing.map((x) => x.ic + ' ' + esc(x.name)).join('、')}</b></div>
+        <div class="pp-f" style="margin-top:8px"><button class="pri" data-a="shareall">一鍵分發給所有人</button></div></div>` : ''}
+      <div class="pp cl-all"><div class="pp-h"><b>🔑 冰箱、菜品、員工餐用同一組密碼？</b></div>
         <div class="add-g"><label>密碼<input id="allpw" type="password" autocomplete="off" placeholder="輸入後按「套用到全部」"></label></div>
         <div class="pp-f"><button data-a="fillall">套用到全部</button></div></div>
       <div class="adm-list" style="margin-top:12px">
       ${SYS.map((x) => {
-        const c = conf(x.k) || {}, [cls, txt] = status(x.k);
-        return `<form class="pp cl-sys" data-k="${x.k}"><div class="pp-h"><b>${x.ic} ${x.name}</b><span class="cl-st ${cls}">${esc(txt)}</span></div>
-          <div class="add-g"><label>密碼<input name="pw" type="password" autocomplete="off" placeholder="${c.pw ? '已設定（不改就留空）' : '這個系統的雲端同步密碼'}"></label></div>
+        const c = conf(x.k) || {}, [cls, txt] = status(x.k), sx = sh[x.k];
+        return `<form class="pp cl-sys" data-k="${x.k}"><div class="pp-h"><b>${x.ic} ${x.name}</b><span class="cl-st ${cls}">${esc(txt)}</span>${sx ? `<span class="cl-st ok" title="${esc((sx.by || '') + ' 分發')}">📤 已分發</span>` : ''}</div>
+          <div class="add-g"><label>${x.k === 'sop' ? '存取密碼' : '密碼'}<input name="pw" type="password" autocomplete="off" placeholder="${c[x.sec] ? '已設定（不改就留空）' : '這個系統的雲端同步密碼'}"></label></div>
           <details${c.url && c.url !== x.def() ? ' open' : ''}><summary>雲端網址（通常不用改）</summary><input name="url" value="${esc(c.url || x.def())}" spellcheck="false" autocomplete="off"></details>
-          <div class="pp-f"><button class="pri">儲存並連線</button>${c.pw ? '<button type="button" data-a="off" class="danger">停用同步</button>' : ''}
-            ${x.k !== 'meal' ? `<a class="cl-open" href="${x.k}/index.html${Q}">打開${x.name.replace('紀錄', '').replace('記錄表', '')} →</a>` : ''}</div>
+          <div class="pp-f"><button class="pri">${admin ? '儲存並分發' : '儲存並連線'}</button>${c[x.sec] ? '<button type="button" data-a="off" class="danger">停用同步</button>' : ''}
+            ${admin && sx ? '<button type="button" data-a="unshare">取消分發</button>' : ''}
+            ${x.k !== 'meal' ? `<a class="cl-open" href="${x.k}/index.html${Q}">打開 →</a>` : ''}</div>
           <p class="cl-msg" hidden></p></form>`;
       }).join('')}
-      ${(() => { const d = (window.__kitchen && window.__kitchen.data || {}).sop, on = !!(d && d.cloud); return `<div class="pp cl-sys"><div class="pp-h"><b>📖 廚房 SOP 食譜</b><span class="cl-st ${on ? 'ok' : ''}">${on ? '已連線' : '未連線'}</span></div>
-        <p class="adm-tip" style="margin:6px 0 8px">SOP 系統的雲端連線（網址和存取碼）在它自己的設定頁設定，和原本的 SOP 系統一樣。</p>
-        <div class="pp-f"><a class="cl-open" style="margin-left:0" href="sop/index.html${Q}#/settings">打開 SOP 設定 →</a></div></div>`; })()}
       <div class="pp cl-sys"><div class="pp-h"><b>📋 備料交接日誌</b><span class="cl-st ${prep[0]}">${esc(prep[1])}</span></div>
         <p class="adm-tip" style="margin:6px 0 0">用首頁登入的帳號同步（要有「備料」權限），不用密碼。</p></div>
       </div>`;
@@ -92,40 +113,53 @@
   }
   async function save(f) {
     const x = SYS.find((s) => s.k === f.dataset.k), old = conf(x.k) || {};
-    const url = f.url.value.trim() || x.def(), pw = f.pw.value || old.pw || '';
+    const url = f.url.value.trim() || x.def(), v = f.pw.value || old[x.sec] || '';
     const msg = $('.cl-msg', f), btn = $('.pri', f);
     const say = (t, bad) => { msg.textContent = t; msg.hidden = false; msg.classList.toggle('bad', !!bad); };
     if (!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(url) && !/^http:\/\/127\.0\.0\.1:\d+\/?/.test(url)) return say('網址格式不對，應該像 https://script.google.com/macros/s/…/exec', true);
-    if (pw.length < 4) return say('請輸入密碼（至少 4 個字）', true);
+    if (v.length < 4) return say('請輸入密碼（至少 4 個字）', true);
     btn.disabled = true; say('連線中…');
     try {
-      await ping(x, url, pw);
-      if (x.k === 'meal') {
-        write(LSM, { url, pw });
-        say('✓ 已連線，首頁和員工餐都會用這組設定');
-        if (window.__kitchen) window.__kitchen.render(true);
-      } else {
-        const all = read(LS) || {}; all[x.k] = { url, pw, at: Date.now() }; write(LS, all);
-        say(`✓ 密碼正確。打開「${x.name}」時會自動完成連線（第一次可能會問要合併還是改用雲端資料）。`);
-      }
+      await ping(x, url, v);
+      const cfg = { url, [x.sec]: v };
+      if (x.k === 'meal') { write(LSM, cfg); if (window.__kitchen) window.__kitchen.render(true); }
+      else { const all = read(LS) || {}; all[x.k] = { ...cfg, at: Date.now() }; write(LS, all); }
+      let msgT = x.k === 'meal' ? '✓ 已連線' : `✓ 密碼正確，打開「${x.name}」時會自動連線`;
+      if (canShare()) { await share(x.k, cfg); msgT += '，並已分發給所有有權限的人'; }
+      say(msgT);
       f.pw.value = '';
       setTimeout(draw, 1800);
     } catch (e) { say(e.message, true); }
     btn.disabled = false;
   }
-  function onClick(e) {
+  async function onClick(e) {
     const b = e.target.closest('[data-a]'); if (!b) return;
     const a = b.dataset.a;
     if (a === 'close') { ov.remove(); ov = null; if (window.__kitchen) window.__kitchen.render(); return; }
     if (a === 'fillall') {
       const v = $('#allpw', ov).value;
       if (!v) return toast('請先輸入密碼');
-      ov.querySelectorAll('form.cl-sys input[name=pw]').forEach((i) => { i.value = v; });
-      toast('已填入三個系統，請按各自的「儲存並連線」');
+      ov.querySelectorAll('form.cl-sys:not([data-k=sop]) input[name=pw]').forEach((i) => { i.value = v; });
+      toast('已填入冰箱、菜品、員工餐，請按各自的「儲存」');
       return;
     }
+    if (a === 'shareall') {
+      b.disabled = true;
+      let n = 0;
+      try {
+        for (const x of SYS) { const c = conf(x.k); if (c && c.url && c[x.sec]) { await share(x.k, { url: c.url, [x.sec]: c[x.sec] }); n++; } }
+        toast(`已分發 ${n} 個系統的雲端設定給所有有權限的人`, 4000);
+      } catch (err) { toast(err.message, 4000); }
+      draw(); return;
+    }
+    const f = b.closest('form'); if (!f) return;
+    const k = f.dataset.k, x = SYS.find((s) => s.k === k);
+    if (a === 'unshare') {
+      if (!confirm(`取消分發「${x.name}」的雲端設定？（已經連上的裝置不受影響；之後新的裝置要自己輸入密碼）`)) return;
+      try { await share(k, null); toast('已取消分發'); } catch (err) { toast(err.message, 4000); }
+      draw(); return;
+    }
     if (a === 'off') {
-      const f = b.closest('form'), k = f.dataset.k, x = SYS.find((s) => s.k === k);
       if (!confirm(`停用「${x.name}」在這台裝置的雲端同步？（資料仍保留在這台裝置）`)) return;
       if (k === 'meal') write(LSM, null);
       else { const all = read(LS) || {}; all[k] = { off: true, at: Date.now() }; write(LS, all); }

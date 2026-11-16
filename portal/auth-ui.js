@@ -42,6 +42,7 @@
       const finish = (r) => {
         clearInterval(iv); document.removeEventListener('visibilitychange', onVis);
         A.set({ token: r.token, me: r.me, at: Date.now() });
+        A.applyCloud(r.cloud);
         screen.remove(); screen = null;
         toast(`歡迎，${r.me.name}`);
         done(r.me);
@@ -152,6 +153,7 @@
   async function refresh() { await A.check(); }
   A.watch(async (kind, msg) => {
     if (kind === 'perm') { toast('你的權限已更新'); onChange(); }
+    else if (kind === 'cloud') { toast('已收到管理者的雲端同步設定'); onChange(); }
     else if (kind === 'out') { toast(msg, 4000); if (adm) { adm.remove(); adm = null; } await showLogin(); onChange(); }
     else if (kind === 'storage') {
       const s = A.get();

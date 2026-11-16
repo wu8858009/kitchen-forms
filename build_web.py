@@ -17,7 +17,7 @@ MODULES = {
     "sop": VSCODE / "廚房SOP食譜及倍數計算系統" / "web",
 }
 # auth.js：人員權限（沒有權限的人由 kitchen-nav.js 送回首頁）
-NAV_TAG = '<script src="../auth.js?v=4"></script>\n<script src="../kitchen-nav.js?v=8"></script>'
+NAV_TAG = '<script src="../auth.js?v=5"></script>\n<script src="../kitchen-nav.js?v=9"></script>'
 
 
 def build(out: Path = ROOT / "site") -> Path:
