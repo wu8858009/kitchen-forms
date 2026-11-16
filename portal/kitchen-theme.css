@@ -44,6 +44,9 @@
   /* ---------------- 碧潭水電瓦斯抄表（它原本的深色模式 body.dark-mode，由 build_web.py 固定打開＋同一組深藍） */
   html.kf-dark.kf-energy { --navy-950: #050b17; --navy-900: #0b1a33; --navy-800: #102549; --navy-700: #1d3a6b; }
   html.kf-dark.kf-energy body.dark-mode { --bg: #070d1a; --card: #101a2e; --ink: #e6edf7; --ink-soft: #8fa0b8; --line: #22314b; }
+  /* iPhone 主畫面 App：標題列從狀態列（時間、電量）下面開始，首頁按鈕不會被蓋到 */
+  html.kf-energy .topbar { padding-top: calc(env(safe-area-inset-top) + 14px); }
+  html.kf-energy.desktop-app .topbar { padding-top: calc(env(safe-area-inset-top) + 10px); }
 
   /* ---------------- 備料交接日誌（本系統自己的，畫面上直接改） */
   html.kf-dark.kf-prep {

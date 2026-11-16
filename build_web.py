@@ -35,7 +35,7 @@ THEME_TAG = (
     'new MutationObserver(function(){if(!b.classList.contains("dark-mode"))b.classList.add("dark-mode");})'
     '.observe(b,{attributes:true,attributeFilter:["class"]});};'
     'if(document.body)e();else document.addEventListener("DOMContentLoaded",e);}})();</script>\n'
-    '<link rel="stylesheet" href="../kitchen-theme.css?v=3">'
+    '<link rel="stylesheet" href="../kitchen-theme.css?v=4">'
 )
 
 
