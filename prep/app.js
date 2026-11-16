@@ -1,7 +1,7 @@
 /* 備料交接日誌 — 依紙本「碧水堂廚房交接表」：時程、站區分配、交接事項、預估銷售量（平日／假日）、早上／下午／晚上交接、值班主管簽名，可列印 A4 交接表 */
 (() => {
   'use strict';
-  const VERSION = '2.2.0';
+  const VERSION = '2.3.0';
   const DESK = new URLSearchParams(location.search).has('desktop');
   const IS_MOBILE = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 
@@ -514,11 +514,15 @@
       <div class="grow"></div></div>`;
   }
   const sheetPages = (d, blank) => [sheetHtml(d, blank)];
+  // 這一天所在那週的週一～週日
+  const weekDays = (d) => { const mon = addD(d, -((pd(d).getDay() + 6) % 7)); return [0, 1, 2, 3, 4, 5, 6].map((i) => addD(mon, i)); };
+  const md = (d) => { const x = pd(d); return `${x.getMonth() + 1}/${x.getDate()}`; };
   let blankMode = false;
   function viewSheet(el) {
     const d = cur.date;
     el.innerHTML = `<div class="wrap">${dateBar('sheet')}
       <div class="bar no-print"><button class="btn pri" data-act="print">🖨️ ${DESK || IS_MOBILE ? '存成 PDF' : '列印'}</button>
+        <button class="btn pri wk" data-act="printweek" title="一次印出這週週一到週日，共 7 張">🗓️ ${DESK || IS_MOBILE ? '整週存成 PDF' : '列印整週'}（${md(weekDays(d)[0])}～${md(weekDays(d)[6])}）</button>
         <label><input type="checkbox" id="blank" ${blankMode ? 'checked' : ''}> 空白表（只印品項，給現場手寫）</label>
         <span class="muted">A4 直式</span></div>
       <div class="sheets-fit"><div class="sheets">${sheetPages(d, blankMode).join('')}</div></div></div>`;
@@ -526,6 +530,7 @@
     fitSheets();
     $('#blank', el).addEventListener('change', (e) => { blankMode = e.target.checked; route(); });
     $('[data-act=print]', el).addEventListener('click', () => printSheets(d));
+    $('[data-act=printweek]', el).addEventListener('click', () => printSheets(d, true));
   }
   // 交接表預覽依畫面寬度等比縮放（手機、平板也能整張看到；列印不受影響）
   function fitSheets() {
@@ -549,12 +554,13 @@
       document.head.append(s);
     });
   }
-  async function buildPdf(d) {
+  async function buildPdf(d, week) {
     await loadJs('../fridge/vendor/html2canvas.min.js');
     await loadJs('../fridge/vendor/jspdf.umd.min.js');
+    const days = week ? weekDays(d) : [d];
     const host = document.createElement('div');
     host.className = 'pdf-render';
-    host.innerHTML = sheetPages(d, blankMode).join('');
+    host.innerHTML = days.map((x) => sheetHtml(x, blankMode)).join('');
     document.body.append(host);
     try {
       const W = 210, H = 297, MG = 8, cw = W - MG * 2, chh = H - MG * 2;
@@ -565,17 +571,30 @@
         let w = cw, h = cv.height / cv.width * cw;
         if (h > chh) { w *= chh / h; h = chh; }
         if (i++) pdf.addPage();
+        if (week) toast(`PDF 產生中… ${i}/${days.length}`, 8000);
         pdf.addImage(cv.toDataURL('image/jpeg', 0.92), 'JPEG', MG + (cw - w) / 2, MG, w, h);
       }
-      const name = fname(`${db.title || '備料交接日誌'}_${blankMode ? '空白表' : d.replace(/-/g, '')}.pdf`);
+      const tag = week ? `${days[0].replace(/-/g, '')}-${days[6].slice(5).replace('-', '')}_整週` : d.replace(/-/g, '');
+      const name = fname(`${db.title || '備料交接日誌'}_${blankMode ? (week ? '空白表_整週' : '空白表') : tag}.pdf`);
       return new File([pdf.output('blob')], name, { type: 'application/pdf' });
     } finally { host.remove(); }
   }
-  async function printSheets(d) {
-    if (!DESK && !IS_MOBILE) return window.print();
+  async function printSheets(d, week) {
+    if (!DESK && !IS_MOBILE) {
+      // 電腦瀏覽器：整週時先把 7 張放進預覽區再列印，印完換回來
+      const sh = $('.sheets');
+      if (!week || !sh) return window.print();
+      const keep = sh.innerHTML;
+      sh.innerHTML = weekDays(d).map((x) => sheetHtml(x, blankMode)).join('');
+      const back = () => { sh.innerHTML = keep; fitSheets(); window.removeEventListener('afterprint', back); };
+      window.addEventListener('afterprint', back);
+      window.print();
+      if (!('onafterprint' in window)) setTimeout(back, 1000);
+      return;
+    }
     toast('PDF 產生中…', 8000);
     try {
-      const file = await buildPdf(d);
+      const file = await buildPdf(d, week);
       await saveFile(new Uint8Array(await file.arrayBuffer()), file.name, 'application/pdf');
     } catch (e) { toast('PDF 產生失敗：' + (e.message || e), 5000); }
   }
