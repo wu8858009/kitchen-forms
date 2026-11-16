@@ -29,6 +29,8 @@ def build(out: Path = ROOT / "site") -> Path:
         shutil.copytree(src, dst, ignore=shutil.ignore_patterns("__test*"))
         idx = dst / "index.html"
         html = idx.read_text(encoding="utf-8")
+        # iPhone 主畫面 App：狀態列用不透明黑底，畫面從狀態列下面開始（不會被時間、電量擋到，也沒有淡出）
+        html = html.replace('content="black-translucent"', 'content="black"')
         if NAV_TAG not in html:
             html = html.replace("</body>", f"{NAV_TAG}\n</body>", 1)
         idx.write_text(html, encoding="utf-8")
