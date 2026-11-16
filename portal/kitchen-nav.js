@@ -5,12 +5,23 @@
   const home = '../index.html' + (DESK ? '?desktop=1' : '');
   // 首頁「雲端同步」（或管理者分發）的設定：用各系統自己的連線流程連上
   function applyCloudCfg(md, say) {
-    if (md !== 'fridge' && md !== 'dish' && md !== 'sop') return;
+    if (md !== 'fridge' && md !== 'dish' && md !== 'sop' && md !== 'equip') return;
     let want = null;
     try { want = (JSON.parse(localStorage.getItem('kitchenforms-cloud')) || {})[md] || null; } catch (e) { want = null; }
     if (!want) return;
     let n = 0;
     const iv = setInterval(async () => {
+      if (md === 'equip') {
+        const G = window.SG;
+        if (!G || !G.sync || !G.db || !G.db.loaded) { if (++n > 120) clearInterval(iv); return; }
+        clearInterval(iv);
+        const c = G.sync.cfg();
+        if (want.off) { if (G.sync.enabled()) { G.sync.disconnect(); say('已依首頁設定停用雲端同步'); } return; }
+        if (G.sync.enabled() && c.url === want.url && c.key === want.key) return;
+        try { say('依管理者設定連線 Google 雲端…'); await G.sync.connect(want.url, want.key); say('✓ 已連線 Google 雲端同步'); }
+        catch (e) { say('雲端連線失敗：' + (e && e.message || e)); }
+        return;
+      }
       if (md === 'sop') {
         const K = window.__kitchen;
         if (!K || !K.db) { if (++n > 120) clearInterval(iv); return; }
@@ -55,13 +66,13 @@
   let BG = false;
   try { BG = window.top !== window; } catch (e) { BG = true; }
   if (BG) {
-    const md = (location.pathname.match(/\/(fridge|prep|dish|meal|sop)\//) || [])[1];
+    const md = (location.pathname.match(/\/(fridge|prep|dish|meal|sop|equip)\//) || [])[1];
     if (md && window.KitchenAuth && !window.KitchenAuth.can(md)) { location.replace('about:blank'); return; }
     applyCloudCfg(md, () => {}); // 背景也照首頁（管理者分發）的設定連上雲端
     return;
   }
   // 權限：沒有這個系統權限（或還沒登入）就回首頁
-  const mod = (location.pathname.match(/\/(fridge|prep|dish|meal|sop)\//) || [])[1];
+  const mod = (location.pathname.match(/\/(fridge|prep|dish|meal|sop|equip)\//) || [])[1];
   if (mod && window.KitchenAuth && !window.KitchenAuth.can(mod)) { location.replace(home); return; }
   // 開著的時候權限被取消、帳號被停用：存好資料再回首頁
   if (mod && window.KitchenAuth && window.KitchenAuth.on) {
@@ -79,24 +90,47 @@
     .kn-home:hover{background:rgba(255,255,255,.26)} .kn-home span{font-size:17px;line-height:1}
     .kn-home.light{background:#fdf0e1;border-color:#f3d9bd;color:#b45309} .kn-home.light:hover{background:#fbe3c8}
     .kn-home.light{background:#fdf0e1;border-color:#f3d9bd;color:#b45309} .kn-home.light:hover{background:#fbe3c8}
+    .kn-home.kn-float{position:fixed;z-index:9999;left:max(10px,env(safe-area-inset-left));top:calc(env(safe-area-inset-top) + 10px);background:rgba(15,23,42,.72);border-color:rgba(255,255,255,.25);box-shadow:0 4px 14px rgba(0,0,0,.25)}
     @media print{.kn-home{display:none!important}}`;
   document.head.appendChild(st);
   const a = document.createElement('a');
   a.className = 'kn-home'; a.href = home; a.title = '回到廚房專用表格系統首頁';
   a.innerHTML = '<span>⌂</span>首頁';
-  a.addEventListener('click', async (e) => {
+  async function goHome(e) {
     e.preventDefault();
     const m = window.__fridge || window.__dish || window.__meal || window.__prep;
     try { if (m && m.flush) await Promise.race([m.flush(), new Promise((r) => setTimeout(r, 3000))]); } catch (err) { /* 照樣回首頁 */ }
     if (mod === 'sop') { window.dispatchEvent(new Event('pagehide')); await new Promise((r) => setTimeout(r, 400)); } // SOP 收到 pagehide 會把還沒存的資料存好
+    if (mod === 'equip' && window.SG && SG.db && SG.db.saveNow) { try { SG.db.saveNow(); } catch (err) { /* */ } await new Promise((r) => setTimeout(r, 300)); }
     location.href = home;
-  });
-  const top = document.querySelector('header.top, header.topbar');
-  if (top) {
-    top.insertBefore(a, top.firstChild);
-    // 淺色標題列（SOP）：按鈕改用深色字
-    const bg = getComputedStyle(top).backgroundColor.match(/\d+/g) || [0, 0, 0];
-    if ((+bg[0] * 299 + +bg[1] * 587 + +bg[2] * 114) / 1000 > 160) a.classList.add('light');
+  }
+  a.addEventListener('click', goHome);
+  // 放進標題列（設備管家的大螢幕是左邊側邊欄）；畫面重畫後（例如登入後）再補上
+  function placeHome() {
+    const tops = document.querySelectorAll('header.top, header.topbar, aside.side');
+    // 設備管家登入畫面沒有標題列：先放一個浮在左上角的按鈕
+    if (mod === 'equip' && !tops.length) {
+      if (!a.isConnected) { a.classList.add('kn-float'); document.body.append(a); }
+      return;
+    }
+    if (a.classList.contains('kn-float')) { a.classList.remove('kn-float'); a.remove(); }
+    for (const top of tops) {
+      if (top.querySelector(':scope > .kn-home')) continue;
+      const b = a.isConnected ? a.cloneNode(true) : a; // 第二個位置（側邊欄）用複製的按鈕
+      if (b !== a) b.addEventListener('click', goHome);
+      top.insertBefore(b, top.firstChild);
+      // 淺色標題列（SOP、設備管家）：按鈕改用深色字
+      const bg = getComputedStyle(top).backgroundColor.match(/[\d.]+/g) || [0, 0, 0, 1];
+      const alpha = bg.length > 3 ? +bg[3] : 1;
+      const lum = alpha < 0.3 ? (matchMedia('(prefers-color-scheme: dark)').matches ? 0 : 255) : (+bg[0] * 299 + +bg[1] * 587 + +bg[2] * 114) / 1000;
+      if (lum > 160) b.classList.add('light');
+      if (top.matches('aside.side')) b.style.margin = '0 0 10px';
+    }
+  }
+  placeHome();
+  if (mod === 'equip') {
+    let qd = 0;
+    new MutationObserver(() => { if (!qd) qd = requestAnimationFrame(() => { qd = 0; placeHome(); }); }).observe(document.body, { childList: true, subtree: true });
   }
 
   // 首頁「雲端同步」統一設定：冰箱、菜品打開時，用它們自己的連線流程套用首頁存的網址和密碼

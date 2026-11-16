@@ -8,6 +8,7 @@ import ctypes
 import datetime as dt
 import functools
 import json
+import secrets
 import os
 import subprocess
 import sys
@@ -16,7 +17,7 @@ import time
 import webbrowser
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import webview
 
@@ -42,7 +43,10 @@ MODULES = {
     "dish": (_APPDATA / "DishSales", "菜品銷售紀錄", "DishSales_SingleInstance"),
     "prep": (_APPDATA / "KitchenPrep", "備料交接日誌", None),  # 只在本系統裡，沒有單獨程式
     "sop": (_APPDATA / "KitchenSOP", "廚房SOP", "KitchenSOP_SingleInstance"),  # 和原本的廚房SOP程式同一份資料
+    "equip": (_APPDATA / "ShebeiGuanjia", "設備管家", "ShebeiGuanjia_SingleInstance"),  # 和原本的設備管家程式同一份資料
 }
+# 設備管家的網頁用 /api/*（跟它原本的程式一樣）讀寫資料，要帶這個 token，其他網站才不能亂寫
+EQUIP_TOKEN = secrets.token_urlsafe(24)
 FILE_TYPES = {
     ".xlsx": "Excel 活頁簿 (*.xlsx)",
     ".json": "JSON 備份 (*.json)",
@@ -50,6 +54,7 @@ FILE_TYPES = {
     ".pdf": "PDF 檔 (*.pdf)",
     ".png": "PNG 圖片 (*.png)",
     ".jpg": "JPG 圖片 (*.jpg;*.jpeg)",
+    ".csv": "CSV 檔 (*.csv)",
 }
 MEAL_CANDIDATES = [
     EXE_DIR / MEAL_EXE_NAME,
@@ -309,6 +314,111 @@ class Api:
 class _QuietHandler(SimpleHTTPRequestHandler):
     extensions_map = {**SimpleHTTPRequestHandler.extensions_map, ".js": "text/javascript", ".webmanifest": "application/manifest+json"}
 
+    # ---- 設備管家：和它原本程式（desktop_app.py）一樣的 /api/*，資料在 %APPDATA%\ShebeiGuanjia
+    def _equip_dir(self):
+        return MODULES["equip"][0]
+
+    def _authorized(self):
+        q = parse_qs(urlparse(self.path).query)
+        return secrets.compare_digest(self.headers.get("X-SG-Token", "") or (q.get("t") or [""])[0], EQUIP_TOKEN)
+
+    def _json(self, obj, code=200):
+        body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _body(self):
+        n = int(self.headers.get("Content-Length") or 0)
+        return self.rfile.read(n).decode("utf-8") if n else ""
+
+    def do_GET(self):
+        u = urlparse(self.path)
+        if u.path.startswith("/api/"):
+            if not self._authorized():
+                return self._json({"ok": False}, 403)
+            d = self._equip_dir()
+            if u.path == "/api/db":
+                def rj(f, default=None):
+                    try:
+                        return json.loads((d / f).read_text(encoding="utf-8"))
+                    except (OSError, ValueError):
+                        return default
+                return self._json({"ok": True, "db": rj("data.json"), "prefs": rj("prefs.json", {}), "path": str(d)})
+            if u.path == "/api/autostart":
+                return self._json({"ok": True, "on": False})
+            return self._json({"ok": False}, 404)
+        # 設備管家桌面模式：網址自動補上 token（從首頁點進來時沒有）
+        if u.path in ("/equip/", "/equip/index.html") and "desktop=1" in u.query and "t=" not in u.query:
+            self.send_response(302)
+            self.send_header("Location", f"/equip/index.html?{u.query}&t={EQUIP_TOKEN}")
+            self.end_headers()
+            return
+        return super().do_GET()
+
+    def do_POST(self):
+        u = urlparse(self.path)
+        if not u.path.startswith("/api/") or not self._authorized():
+            return self._json({"ok": False}, 403)
+        d = self._equip_dir()
+        try:
+            if u.path == "/api/db":
+                text = self._body()
+                json.loads(text)  # 不寫入損壞的內容
+                d.mkdir(parents=True, exist_ok=True)
+                tmp = d / "data.json.tmp"
+                tmp.write_text(text, encoding="utf-8")
+                os.replace(tmp, d / "data.json")
+                _daily_backup(d, text)
+                return self._json({"ok": True})
+            if u.path == "/api/prefs":
+                prefs = json.loads(self._body() or "{}")
+                d.mkdir(parents=True, exist_ok=True)
+                tmp = d / "prefs.json.tmp"
+                tmp.write_text(json.dumps(prefs, ensure_ascii=False), encoding="utf-8")
+                os.replace(tmp, d / "prefs.json")
+                return self._json({"ok": True})
+            if u.path in ("/api/notify", "/api/bg", "/api/show"):
+                return self._json({"ok": True})
+            if u.path == "/api/autostart":
+                return self._json({"ok": False, "error": "開機自動啟動請在原本的設備管家程式設定"})
+            if u.path in ("/api/openfile", "/api/savefile"):
+                q = parse_qs(u.query)
+                name = os.path.basename((q.get("name") or ["file"])[0]) or "file"
+                name = "".join(c for c in name if c not in '<>:"/\\|?*') or "file"
+                text = self._body()
+                is_data = text.startswith("data:") and ";base64," in text[:80]
+                if u.path == "/api/openfile":
+                    if not is_data:
+                        return self._json({"ok": False, "error": "檔案格式錯誤"})
+                    folder = Path(os.environ.get("TEMP") or d) / "ShebeiGuanjia"
+                    folder.mkdir(parents=True, exist_ok=True)
+                    target = folder / name
+                    target.write_bytes(base64.b64decode(text.split(",", 1)[1]))
+                    if not os.environ.get("KITCHEN_SELFTEST"):
+                        os.startfile(str(target))  # 用預設程式開啟（PDF、照片）
+                    return self._json({"ok": True, "path": str(target)})
+                out = os.environ.get("KITCHEN_EXPORT_DIR")
+                if out:
+                    target = str(Path(out) / name)
+                else:
+                    ext = Path(name).suffix.lower()
+                    res = _window.create_file_dialog(webview.FileDialog.SAVE, directory=str(Path.home() / "Documents"),
+                                                     save_filename=name, file_types=(FILE_TYPES.get(ext, "所有檔案 (*.*)"),))
+                    if not res:
+                        return self._json({"ok": False, "cancelled": True})
+                    target = res if isinstance(res, str) else res[0]
+                if is_data:
+                    Path(target).write_bytes(base64.b64decode(text.split(",", 1)[1]))
+                else:
+                    Path(target).write_text(text, encoding="utf-8", newline="")
+                return self._json({"ok": True, "path": str(target)})
+        except Exception as e:  # noqa: BLE001 - 回報錯誤，不要斷線
+            return self._json({"ok": False, "error": str(e)}, 500)
+        return self._json({"ok": False}, 404)
+
     def end_headers(self):
         self.send_header("Cache-Control", "no-store")  # 更新 exe 後不吃舊快取
         super().end_headers()
@@ -431,16 +541,27 @@ def _selftest(out_path):
         js("document.querySelector('.kn-home').click()")
         result["back_home_4"] = wait("window.__kitchen && window.__kitchen.summary && window.__kitchen.summary.sop ? 1 : 0")
         result["sop_summary"] = js("JSON.stringify(window.__kitchen.summary.sop)")
+        # 設備管家：開啟、桌面資料介面接上（%APPDATA%\\ShebeiGuanjia）、存檔、回首頁
+        js("document.querySelector('.card.equip .btn').click()")
+        result["equip_desktop"] = wait("window.SG && SG.desktop && SG.db && SG.db.loaded ? SG.desktop.dataPath : ''")
+        js("SG.db.data.settings = SG.db.data.settings || {}; SG.db.data.settings.__kf_test = {id: '__kf_test', updatedAt: Date.now()}; SG.db.saveNow()")
+        time.sleep(1.0)
+        ef = _data_file("equip")
+        result["equip_saved"] = ef.exists() and "__kf_test" in ef.read_text(encoding="utf-8")
+        result["equip_home_btn"] = bool(js("!!document.querySelector('.kn-home')"))
+        js("document.querySelector('.kn-home').click()")
+        result["back_home_5"] = wait("window.__kitchen && window.__kitchen.summary && 'equip' in window.__kitchen.summary ? 1 : 0")
         time.sleep(0.3)
         result["kpis"] = js("[...document.querySelectorAll('.kpi')].map(e => e.innerText.replace(/\\n/g, ' '))")
         result["window"] = [_window.x, _window.y, _window.width, _window.height]
         fs = json.loads(result["fridge_summary"] or "null") or {}
         ds = json.loads(result["dish_summary"] or "null") or {}
         ps = json.loads(result.get("prep_summary") or "null") or {}
-        result["ok"] = bool(result["home_cards"] == 5 and ps.get("done", 0) >= 2 and ps.get("sign") and result["prep_pdf"] and result["prep_saved"] and result["fridge_loaded"] and result["fridge_home_btn"]
+        result["ok"] = bool(result["home_cards"] == 6 and ps.get("done", 0) >= 2 and ps.get("sign") and result["prep_pdf"] and result["prep_saved"] and result["fridge_loaded"] and result["fridge_home_btn"]
                             and result["fridge_saved_today"] and fs.get("done", 0) >= 1
                             and result["dish_loaded"] and ds.get("t", {}).get("q", 0) >= 3
-                            and result["sop_recipes"] and result["sop_saved"] and result["sop_home_btn"] and result["back_home_4"])
+                            and result["sop_recipes"] and result["sop_saved"] and result["sop_home_btn"] and result["back_home_4"]
+                            and result["equip_desktop"] and result["equip_saved"] and result["equip_home_btn"] and result["back_home_5"])
     except Exception as e:  # noqa: BLE001
         result["error"] = repr(e)
     Path(out_path).write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")

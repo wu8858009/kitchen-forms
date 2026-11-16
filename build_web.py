@@ -15,9 +15,12 @@ MODULES = {
     "meal": VSCODE / "員工餐金額總計" / "web",
     "prep": ROOT / "prep",
     "sop": VSCODE / "廚房SOP食譜及倍數計算系統" / "web",
+    "equip": VSCODE / "設備更換紀錄及價位",  # 網頁檔案直接放在專案資料夾
 }
+# 只複製網頁需要的檔案（沒列的系統整個資料夾都複製）
+ONLY = {"equip": ["index.html", "manifest.webmanifest", "sw.js", "css", "js", "icons"]}
 # auth.js：人員權限（沒有權限的人由 kitchen-nav.js 送回首頁）
-NAV_TAG = '<script src="../auth.js?v=5"></script>\n<script src="../kitchen-nav.js?v=9"></script>'
+NAV_TAG = '<script src="../auth.js?v=6"></script>\n<script src="../kitchen-nav.js?v=10"></script>'
 
 
 def build(out: Path = ROOT / "site") -> Path:
@@ -28,7 +31,12 @@ def build(out: Path = ROOT / "site") -> Path:
         if not (src / "index.html").exists():
             sys.exit(f"找不到 {src}\\index.html")
         dst = out / name
-        shutil.copytree(src, dst, ignore=shutil.ignore_patterns("__test*"))
+        if name in ONLY:
+            dst.mkdir(parents=True)
+            for item in ONLY[name]:
+                (shutil.copytree if (src / item).is_dir() else shutil.copy2)(src / item, dst / item)
+        else:
+            shutil.copytree(src, dst, ignore=shutil.ignore_patterns("__test*"))
         idx = dst / "index.html"
         html = idx.read_text(encoding="utf-8")
         # iPhone 主畫面 App：狀態列用不透明黑底，畫面從狀態列下面開始（不會被時間、電量擋到，也沒有淡出）

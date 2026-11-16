@@ -16,6 +16,8 @@
     { k: 'dish', name: '菜品銷售紀錄', ic: '🍱', sec: 'pw', def: () => window.DISH_CLOUD_URL || '', body: (v) => ({ a: 'ping', pw: v }) },
     { k: 'meal', name: '員工餐金額總計', ic: '🍚', sec: 'pw', def: () => window.MEAL_CLOUD_URL || '', body: (v) => ({ action: 'ping', pw: v }) },
     { k: 'sop', name: '廚房 SOP 食譜', ic: '📖', sec: 'key', def: () => window.KSOP_CLOUD_URL || '', body: (v) => ({ a: 'rev', key: v }) },
+    // 設備管家：用「從最新版本之後的變動」來驗證密碼（不會下載資料）
+    { k: 'equip', name: '設備管家', ic: '🔧', sec: 'key', def: () => 'https://script.google.com/macros/s/AKfycbynVKxKgyH9yTlBgcXxyK99KZpRyQ5YgbZ_fiJzjLZvOIfYNOn5LnGfXWXj7OflrFlw1w/exec', body: (v) => ({ action: 'sync', key: v, since: 9e15, changes: [] }) },
   ];
   const read = (k) => { try { return JSON.parse(localStorage.getItem(k)) || null; } catch (e) { return null; } };
   const write = (k, v) => { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* 無痕模式 */ } };
@@ -33,16 +35,18 @@
     if (c && !c.off && c[x.sec]) return c;
     const own = (data(k) || {}).cloud;
     if (k === 'sop') return own && own.url && own.key ? { url: own.url, key: own.key, own: true } : null;
+    if (k === 'equip') { const g = read('sg_sync'); return g && g.enabled && g.url && g.key ? { url: g.url, key: g.key, own: true } : null; }
     return own && own.on && own.url && own.pw ? { url: own.url, pw: own.pw, own: true } : null;
   }
   function status(k) {
     if (k === 'meal') return conf('meal') ? ['ok', '已設定'] : ['', '未設定'];
-    const own = (data(k) || {}).cloud, want = (read(LS) || {})[k];
-    const on = k === 'sop' ? !!(own && own.url) : !!(own && own.on);
+    const g = k === 'equip' ? read('sg_sync') : null;
+    const own = k === 'equip' ? (g && g.enabled ? g : null) : (data(k) || {}).cloud, want = (read(LS) || {})[k];
+    const on = k === 'sop' || k === 'equip' ? !!(own && own.url) : !!(own && own.on);
     if (want && want.off) return on ? ['warn', '下次打開時停用'] : ['', '已停用'];
-    if (want && !(on && own.url === want.url && (k === 'sop' ? own.key === want.key : own.pw === want.pw))) return ['warn', '打開這個系統時會自動連線'];
+    if (want && !(on && own.url === want.url && (k === 'sop' || k === 'equip' ? own.key === want.key : own.pw === want.pw))) return ['warn', '打開這個系統時會自動連線'];
     if (on) {
-      const ts = k === 'sop' ? (data(k).sync || {}).at : own.lastOk, t = ts ? new Date(ts) : null;
+      const ts = k === 'sop' ? (data(k).sync || {}).at : k === 'equip' ? 0 : own.lastOk, t = ts ? new Date(ts) : null;
       return ['ok', t ? `已連線・最後同步 ${t.getMonth() + 1}/${t.getDate()} ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}` : '已連線'];
     }
     return ['', '未連線'];
@@ -99,7 +103,7 @@
       ${SYS.map((x) => {
         const c = conf(x.k) || {}, [cls, txt] = status(x.k), sx = sh[x.k];
         return `<form class="pp cl-sys" data-k="${x.k}"><div class="pp-h"><b>${x.ic} ${x.name}</b><span class="cl-st ${cls}">${esc(txt)}</span>${sx ? `<span class="cl-st ok" title="${esc((sx.by || '') + ' 分發')}">📤 已分發</span>` : ''}</div>
-          <div class="add-g"><label>${x.k === 'sop' ? '存取密碼' : '密碼'}<input name="pw" type="password" autocomplete="off" placeholder="${c[x.sec] ? '已設定（不改就留空）' : '這個系統的雲端同步密碼'}"></label></div>
+          <div class="add-g"><label>${x.k === 'sop' ? '存取密碼' : x.k === 'equip' ? '同步密碼' : '密碼'}<input name="pw" type="password" autocomplete="off" placeholder="${c[x.sec] ? '已設定（不改就留空）' : '這個系統的雲端同步密碼'}"></label></div>
           <details${c.url && c.url !== x.def() ? ' open' : ''}><summary>雲端網址（通常不用改）</summary><input name="url" value="${esc(c.url || x.def())}" spellcheck="false" autocomplete="off"></details>
           <div class="pp-f"><button class="pri">${admin ? '儲存並分發' : '儲存並連線'}</button>${c[x.sec] ? '<button type="button" data-a="off" class="danger">停用同步</button>' : ''}
             ${admin && sx ? '<button type="button" data-a="unshare">取消分發</button>' : ''}
@@ -117,7 +121,7 @@
     const msg = $('.cl-msg', f), btn = $('.pri', f);
     const say = (t, bad) => { msg.textContent = t; msg.hidden = false; msg.classList.toggle('bad', !!bad); };
     if (!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(url) && !/^http:\/\/127\.0\.0\.1:\d+\/?/.test(url)) return say('網址格式不對，應該像 https://script.google.com/macros/s/…/exec', true);
-    if (v.length < 4) return say('請輸入密碼（至少 4 個字）', true);
+    if (v.length < (x.k === 'equip' ? 6 : 4)) return say(`請輸入密碼（至少 ${x.k === 'equip' ? 6 : 4} 個字）`, true);
     btn.disabled = true; say('連線中…');
     try {
       await ping(x, url, v);
@@ -139,7 +143,7 @@
     if (a === 'fillall') {
       const v = $('#allpw', ov).value;
       if (!v) return toast('請先輸入密碼');
-      ov.querySelectorAll('form.cl-sys:not([data-k=sop]) input[name=pw]').forEach((i) => { i.value = v; });
+      ov.querySelectorAll('form.cl-sys:not([data-k=sop]):not([data-k=equip]) input[name=pw]').forEach((i) => { i.value = v; });
       toast('已填入冰箱、菜品、員工餐，請按各自的「儲存」');
       return;
     }

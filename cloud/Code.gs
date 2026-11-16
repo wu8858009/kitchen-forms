@@ -15,8 +15,8 @@
 
 const SH_PEOPLE = '人員權限';
 const SH_DEV = '登入裝置';
-const MODS = ['fridge', 'prep', 'dish', 'meal', 'sop'];
-const HEAD = ['姓名', '角色', '冰箱溫度', '備料交接', '菜品銷售', '員工餐', '廚房SOP', '停用', 'PIN雜湊', '更新時間'];
+const MODS = ['fridge', 'prep', 'dish', 'meal', 'sop', 'equip'];
+const HEAD = ['姓名', '角色', '冰箱溫度', '備料交接', '菜品銷售', '員工餐', '廚房SOP', '設備管家', '停用', 'PIN雜湊', '更新時間'];
 const DEV_HEAD = ['Token', '姓名', '登入時間', '裝置', '最後使用'];
 const SH_PREP = '備料資料';
 const PREP_HEAD = ['鍵', '值', '版本', '更新者', '更新時間'];
@@ -161,7 +161,7 @@ function prepSync_(me, q) {
 }
 
 // ------------------------------------------------------------------ 各系統的雲端連線（管理者分發）
-const CLOUD_MODS = ['fridge', 'dish', 'meal', 'sop'];
+const CLOUD_MODS = ['fridge', 'dish', 'meal', 'sop', 'equip'];
 function cloudGet_() { try { return JSON.parse(PropertiesService.getScriptProperties().getProperty('CLOUD_CFG') || '{}'); } catch (e) { return {}; } }
 function cloudFor_(me) {
   const c = cloudGet_(), out = {};
@@ -174,7 +174,7 @@ function cloudSet_(me, q) {
   const c = cloudGet_();
   if (q.cfg && q.cfg.url) {
     const x = { url: String(q.cfg.url).slice(0, 300), at: Date.now(), by: me.name };
-    if (m === 'sop') x.key = String(q.cfg.key || ''); else x.pw = String(q.cfg.pw || '');
+    if (m === 'sop' || m === 'equip') x.key = String(q.cfg.key || ''); else x.pw = String(q.cfg.pw || '');
     c[m] = x;
   } else delete c[m];
   PropertiesService.getScriptProperties().setProperty('CLOUD_CFG', JSON.stringify(c));
