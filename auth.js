@@ -11,7 +11,7 @@
   if (LOCAL) { try { const o = localStorage.getItem('kitchenforms-auth-url'); if (o != null) url = o; } catch (e) { /* 測試用 */ } }
   const DESK = new URLSearchParams(location.search).has('desktop');
   const LS = 'kitchenforms-auth';
-  const MODS = { fridge: '冰箱溫度記錄表', prep: '備料交接日誌', dish: '菜品銷售紀錄', meal: '員工餐金額總計', sop: '廚房SOP食譜' };
+  const MODS = { fridge: '冰箱溫度記錄表', prep: '備料交接日誌', dish: '菜品銷售紀錄', meal: '員工餐金額總計', sop: '廚房SOP食譜', equip: '設備管家' };
 
   const get = () => { try { return JSON.parse(localStorage.getItem(LS)) || null; } catch (e) { return null; } };
   const set = (s) => { try { localStorage.setItem(LS, JSON.stringify(s)); } catch (e) { /* 空間不足 */ } };
@@ -47,12 +47,13 @@
     if (!c || typeof c !== 'object') return false;
     let all = {}, ch = false;
     try { all = JSON.parse(localStorage.getItem('kitchenforms-cloud')) || {}; } catch (e) { all = {}; }
-    for (const m of ['fridge', 'dish', 'sop']) {
+    for (const m of ['fridge', 'dish', 'sop', 'equip']) {
       const x = c[m]; if (!x || !x.url) continue;
       const cur = all[m] || {};
-      const same = cur.url === x.url && (m === 'sop' ? cur.key === x.key : cur.pw === x.pw) && !cur.off;
+      const kk = m === 'sop' || m === 'equip';
+      const same = cur.url === x.url && (kk ? cur.key === x.key : cur.pw === x.pw) && !cur.off;
       if (same || (cur.off && (cur.at || 0) > (x.at || 0))) continue; // 這台自己後來停用的就不蓋掉
-      all[m] = m === 'sop' ? { url: x.url, key: x.key, at: x.at, from: 'admin' } : { url: x.url, pw: x.pw, at: x.at, from: 'admin' };
+      all[m] = kk ? { url: x.url, key: x.key, at: x.at, from: 'admin' } : { url: x.url, pw: x.pw, at: x.at, from: 'admin' };
       ch = true;
     }
     if (ch) { try { localStorage.setItem('kitchenforms-cloud', JSON.stringify(all)); } catch (e) { /* */ } }
