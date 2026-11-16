@@ -1,7 +1,7 @@
 /* 廚房專用表格系統 — 首頁儀表板：冰箱溫度、備料交接、菜品銷售、員工餐四個系統的入口與今日重點 */
 (() => {
   'use strict';
-  const VERSION = '1.4.0';
+  const VERSION = '1.4.1';
   const DESK = new URLSearchParams(location.search).has('desktop');
   const Q = DESK ? '?desktop=1' : '';
   const $ = (s, r = document) => r.querySelector(s);
@@ -341,6 +341,27 @@
   document.addEventListener('visibilitychange', () => { if (!document.hidden) render(); });
   window.addEventListener('pageshow', (e) => { if (e.persisted) render(); });
   setInterval(() => { if (!document.hidden) render(); }, 5 * 60 * 1000);
+
+
+  // ------------------------------------------------------------------ 自動更新：發現網站有新版就存好資料、重新載入
+  // （手機主畫面的 App 常常不會真的重新開啟，所以切回來時自己檢查一次）
+  let updAt = 0;
+  async function checkUpdate() {
+    if (DESK || !location.protocol.startsWith('http') || Date.now() - updAt < 60 * 1000) return;
+    updAt = Date.now();
+    try {
+      const mine = (([...document.scripts].map((x) => x.src).find((x) => /portal\.js\?v=\d+/.test(x)) || '').match(/\?v=(\d+)/) || [])[1];
+      const html = await (await fetch((location.pathname.endsWith('/') ? location.pathname + 'index.html' : location.pathname) + '?u=' + Date.now(), { cache: 'no-store' })).text();
+      const live = (html.match(/portal\.js\?v=(\d+)/) || [])[1];
+      if (mine && live && +live > +mine) {
+        toast('有新版，更新中…', 3000);
+        
+        setTimeout(() => location.reload(), 600);
+      }
+    } catch (e) { /* 沒網路就算了 */ }
+  }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkUpdate(); });
+  setTimeout(checkUpdate, 4000);
 
   window.__kitchen = { render, get data() { return last; }, VERSION };
   render();
