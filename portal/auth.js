@@ -103,5 +103,55 @@
     window.addEventListener('storage', (e) => { if (e.key === LS) subs.forEach((g) => g('storage')); });
     setTimeout(check, 1200);
   }
+  // ------------------------------------------------------------------ 自動更新（首頁和每個系統頁面共用）
+  // 畫面開著時每分鐘、切回 App 時，看網站上這一頁用的程式檔有沒有換新版本（?v= 變了）；
+  // 有的話等你沒在打字時，先存好資料再自動重新載入，不用關掉 App 重開。
+  const Update = (() => {
+    const assets = (html) => new Set([...html.matchAll(/(?:src|href)="([^"]*\?v=[^"]*)"/g)].map((m) => m[1]));
+    const mine = () => new Set([...document.querySelectorAll('script[src], link[href]')].map((e) => e.getAttribute('src') || e.getAttribute('href')).filter((x) => x && x.includes('?v=')));
+    const busyUi = () => {
+      const a = document.activeElement;
+      if (a && (/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) || a.isContentEditable)) return true;
+      return !!document.querySelector('.modal-bg, .adm, .auth-screen, dialog[open], #modal .modal');
+    };
+    let running = false, last = 0, beforeReload = null;
+    function note(msg) {
+      const e = document.createElement('div');
+      e.textContent = msg;
+      e.style.cssText = 'position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 12px);transform:translateX(-50%);z-index:99999;background:#0f172a;color:#fff;padding:10px 18px;border-radius:999px;font:600 14px system-ui,sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.3)';
+      document.body.append(e);
+    }
+    async function check(force) {
+      if (DESK || !/^https?:$/.test(location.protocol) || running) return;
+      if (!force && Date.now() - last < 50000) return;
+      last = Date.now(); running = true;
+      try {
+        const page = location.pathname.endsWith('/') ? location.pathname + 'index.html' : location.pathname;
+        const res = await fetch(page + '?kfu=' + Date.now(), { cache: 'no-store' });
+        if (!res.ok) return;
+        const live = assets(await res.text()), cur = mine();
+        if (!live.size || ![...live].some((x) => !cur.has(x))) return; // 沒有新版本
+        const key = 'kfu:' + page + ':' + [...live].sort().join('|');
+        try { if (sessionStorage.getItem(key)) return; } catch (e) { /* */ } // 已經重新載入過一次：不要一直重來
+        while (busyUi() || document.hidden) await new Promise((r) => setTimeout(r, 3000)); // 等你打完字、關掉視窗
+        try { sessionStorage.setItem(key, '1'); } catch (e) { /* */ }
+        note('有新版，更新中…');
+        try { if (beforeReload) await Promise.race([beforeReload(), new Promise((r) => setTimeout(r, 3000))]); } catch (e) { /* 照樣更新 */ }
+        try { const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration(); if (reg) await Promise.race([reg.update(), new Promise((r) => setTimeout(r, 3000))]); } catch (e) { /* */ }
+        location.reload();
+      } catch (e) { /* 沒網路就下次再看 */ } finally { running = false; }
+    }
+    let started = false;
+    function start(fn) {
+      if (fn) beforeReload = fn;
+      if (started) return; started = true;
+      setInterval(() => { if (!document.hidden) check(); }, 60 * 1000);
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) check(true); });
+      setTimeout(() => check(true), 5000);
+    }
+    return { start, check };
+  })();
+  window.KitchenUpdate = Update;
+
   window.KitchenAuth = { get on() { return !!url && !DESK; }, url, MODS, get, set, clear, can, isAdmin, call, dev, check, watch, applyCloud };
 })();
