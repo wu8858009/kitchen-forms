@@ -1,7 +1,7 @@
 /* 廚房專用表格系統 — 首頁儀表板：冰箱溫度、備料交接、菜品銷售、員工餐四個系統的入口與今日重點 */
 (() => {
   'use strict';
-  const VERSION = '1.6.0';
+  const VERSION = '1.6.1';
   const DESK = new URLSearchParams(location.search).has('desktop');
   const Q = DESK ? '?desktop=1' : '';
   const $ = (s, r = document) => r.querySelector(s);
@@ -61,7 +61,7 @@
   async function fetchMeal(force) {
     const mc = mealConf();
     if (DESK || !mc.pw || meal.loading) return;
-    if (!force && Date.now() - meal.fetched < 25 * 1000) return; // 25 秒內不重複抓
+    if (!force && Date.now() - meal.fetched < 15 * 1000) return; // 15 秒內不重複抓
     meal.loading = true; paintMeal();
     const ac = window.AbortController ? new AbortController() : null;
     const to = setTimeout(() => ac && ac.abort(), 20000);
@@ -322,12 +322,37 @@
   }
   // 只比資料本身（不比同步時間），沒變就不重畫
   const snapOf = (d) => [d.fridge, d.dish, d.prep].map((x) => (x ? JSON.stringify(x, (k, v) => (k === 'cloud' || k === '_sync' || k === 'meAct' ? undefined : v)) : '-')).join('|');
+  // 每 3 秒看這台裝置的資料（原始文字沒變就不解析，很省電）；有變就更新首頁
+  let lastRaw = '';
   async function watchLocal() {
     if (document.hidden || $('.adm, .auth-screen, .modal-bg')) return;
-    try { const d = await loadLocal(); if (snapOf(d) !== snap) render(); } catch (e) { /* */ }
+    try {
+      if (DESK) { const d = await loadLocal(); if (snapOf(d) !== snap) render(); }
+      else {
+        const raw = await Promise.all([idbGet('fridgetemp'), idbGet('dishsales'), idbGet('kitchenprep')]);
+        const key = raw.map((x) => x || '').join('');
+        if (key !== lastRaw) {
+          lastRaw = key;
+          const d = { fridge: parse(raw[0]), dish: parse(raw[1]), prep: parse(raw[2]) };
+          if (snapOf(d) !== snap) render();
+        }
+      }
+    } catch (e) { /* */ }
     if (AUTH.can('meal')) fetchMeal();
   }
-  setInterval(watchLocal, 10 * 1000);
+  setInterval(watchLocal, DESK ? 10 * 1000 : 3 * 1000);
+  // 背景的系統每 5 秒問一次雲端有沒有新資料（只問版本，很快）
+  setInterval(() => {
+    if (document.hidden) return;
+    for (const [m, f] of Object.entries(BG)) {
+      try {
+        const w = f.contentWindow;
+        if (m === 'fridge' && w.__fridge && w.__fridge.Cloud) w.__fridge.Cloud.tick();
+        if (m === 'dish' && w.__dish && w.__dish.Cloud) w.__dish.Cloud.tick();
+        if (m === 'prep' && w.__prep && w.__prep.poll) w.__prep.poll();
+      } catch (e) { /* 框架還在載入 */ }
+    }
+  }, 5000);
   async function render(force) {
     const now = new Date();
     $('#today').textContent = `${now.getFullYear()}/${now.getMonth() + 1}/${now.getDate()}（${WD[now.getDay()]}）`;
