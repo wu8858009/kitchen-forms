@@ -25,7 +25,22 @@
       screen.innerHTML = `<div class="auth-box"><img src="icons/icon-192.png" alt="" class="auth-logo"><h1>廚房專用表格系統</h1><div class="auth-body"><p class="auth-msg">連線中…</p></div></div>`;
       document.body.append(screen);
       const body = $('.auth-body', screen);
+      let mode = '', updNames = null;
+      // 登入畫面開著時，每 8 秒、切回來時看人員名單有沒有變（管理者新增、停用人員馬上出現／消失）
+      async function poll() {
+        if (document.hidden || !screen) return;
+        let st;
+        try { st = await A.call('status'); } catch (e) { return; }
+        if (!st || !st.ok || !screen) return;
+        if (mode === 'error') load();
+        else if (mode === 'setup' && st.setup) { login(st.names || []); toast('管理者已經建立好了，請選擇你的名字'); }
+        else if (mode === 'login' && updNames) updNames(st.names || []);
+      }
+      const iv = setInterval(poll, 8000);
+      const onVis = () => { if (!document.hidden) poll(); };
+      document.addEventListener('visibilitychange', onVis);
       const finish = (r) => {
+        clearInterval(iv); document.removeEventListener('visibilitychange', onVis);
         A.set({ token: r.token, me: r.me, at: Date.now() });
         screen.remove(); screen = null;
         toast(`歡迎，${r.me.name}`);
@@ -35,14 +50,16 @@
         body.innerHTML = '<p class="auth-msg">連線中…</p>';
         let st;
         try { st = await A.call('status'); } catch (e) {
+          mode = 'error';
           body.innerHTML = `<p class="auth-err">${esc(e.message)}</p><button class="auth-btn" data-x="retry">重新連線</button>`;
           $('[data-x=retry]', body).onclick = load; return;
         }
-        if (!st.ok) { body.innerHTML = `<p class="auth-err">${esc(st.error || '讀取失敗')}</p><button class="auth-btn" data-x="retry">重新連線</button>`; $('[data-x=retry]', body).onclick = load; return; }
+        if (!st.ok) { mode = 'error'; body.innerHTML = `<p class="auth-err">${esc(st.error || '讀取失敗')}</p><button class="auth-btn" data-x="retry">重新連線</button>`; $('[data-x=retry]', body).onclick = load; return; }
         if (!st.setup) setup(); else login(st.names || []);
       }
       // 第一次：建立管理者
       function setup() {
+        mode = 'setup';
         body.innerHTML = `<p class="auth-sub">第一次使用：先建立一位<b>管理者</b>。<br>之後由管理者新增人員、設定每個人能開哪些系統。</p>
           <form class="auth-form"><label>你的名字</label><input name="n" autocomplete="off" maxlength="20" placeholder="例：店長">
           <label>PIN 碼（4～8 位數字）</label><input name="p" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="new-password">
@@ -66,6 +83,7 @@
       }
       // 選名字 → 輸入 PIN
       function login(names) {
+        mode = 'login';
         let who = (A.get() || {}).last || '';
         if (!names.includes(who)) who = names.length === 1 ? names[0] : '';
         let pin = '';
@@ -77,6 +95,15 @@
             <div class="auth-pad">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map((d) => `<button data-d="${d}">${d}</button>`).join('')}<button data-d="del" aria-label="刪除">⌫</button><button data-d="0">0</button><button data-d="ok" class="ok" aria-label="登入">登入</button></div>` : ''}`;
         };
         draw();
+        const nameBtns = () => names.map((n) => `<button class="auth-name${n === who ? ' on' : ''}" data-n="${esc(n)}">${esc(n)}</button>`).join('');
+        // 名單有變：只換名字那一排，正在輸入的 PIN 不會被清掉（除非選的那個人被停用、刪除）
+        updNames = (nn) => {
+          if (JSON.stringify(nn) === JSON.stringify(names)) return;
+          names = nn;
+          if (who && !names.includes(who)) { who = names.length === 1 ? names[0] : ''; pin = ''; draw(); return; }
+          if (!who && names.length === 1) { who = names[0]; draw(); return; }
+          const box = $('.auth-names', body); if (box) box.innerHTML = nameBtns();
+        };
         const submit = async () => {
           if (pin.length < 4) return;
           const err = $('.auth-err', body), p = pin;
@@ -203,6 +230,18 @@
     adm.addEventListener('click', onAdmClick);
     adm.addEventListener('change', onAdmChange);
     await loadAdmin();
+    // 每 10 秒看名單有沒有被別的管理者（或試算表）改過；正在輸入時不更新
+    const me = adm;
+    const iv = setInterval(async () => {
+      if (adm !== me) return clearInterval(iv);
+      if (document.hidden) return;
+      const typing = () => { const a = document.activeElement; return (a && adm && adm.contains(a) && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)) || [...adm.querySelectorAll('form.add input[name=n], form.add input[name=p]')].some((i) => i.value); };
+      if (typing()) return;
+      try {
+        const r = await A.call('list', { token: A.get().token });
+        if (r.ok && adm === me && !typing() && JSON.stringify(r.people) !== JSON.stringify(people)) { people = r.people; sheetUrl = r.sheet || sheetUrl; drawAdmin(); }
+      } catch (e) { /* 沒網路 */ }
+    }, 10000);
   }
   let people = [], sheetUrl = '';
   async function loadAdmin() {
