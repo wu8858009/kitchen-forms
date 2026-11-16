@@ -87,22 +87,23 @@
         let who = (A.get() || {}).last || '';
         if (!names.includes(who)) who = names.length === 1 ? names[0] : '';
         let pin = '';
+        // 名字改用下拉選單
+        const nameOpts = () => `<option value=""${who ? '' : ' selected'} disabled>— 請選擇你的名字 —</option>` + names.map((n) => `<option value="${esc(n)}"${n === who ? ' selected' : ''}>${esc(n)}</option>`).join('');
         const draw = () => {
           body.innerHTML = `<p class="auth-sub">${who ? '輸入 PIN 碼' : '請選擇你的名字'}</p>
-            <div class="auth-names">${names.map((n) => `<button class="auth-name${n === who ? ' on' : ''}" data-n="${esc(n)}">${esc(n)}</button>`).join('')}</div>
+            <div class="auth-names"><select class="auth-select" aria-label="選擇你的名字">${nameOpts()}</select></div>
             ${who ? `<div class="auth-dots">${Array.from({ length: Math.max(4, pin.length) }, (_, i) => `<i class="${i < pin.length ? 'on' : ''}"></i>`).join('')}</div>
             <p class="auth-err" hidden></p>
             <div class="auth-pad">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map((d) => `<button data-d="${d}">${d}</button>`).join('')}<button data-d="del" aria-label="刪除">⌫</button><button data-d="0">0</button><button data-d="ok" class="ok" aria-label="登入">登入</button></div>` : ''}`;
         };
         draw();
-        const nameBtns = () => names.map((n) => `<button class="auth-name${n === who ? ' on' : ''}" data-n="${esc(n)}">${esc(n)}</button>`).join('');
         // 名單有變：只換名字那一排，正在輸入的 PIN 不會被清掉（除非選的那個人被停用、刪除）
         updNames = (nn) => {
           if (JSON.stringify(nn) === JSON.stringify(names)) return;
           names = nn;
           if (who && !names.includes(who)) { who = names.length === 1 ? names[0] : ''; pin = ''; draw(); return; }
           if (!who && names.length === 1) { who = names[0]; draw(); return; }
-          const box = $('.auth-names', body); if (box) box.innerHTML = nameBtns();
+          const sel = $('.auth-select', body); if (sel) sel.innerHTML = nameOpts();
         };
         const submit = async () => {
           if (pin.length < 4) return;
@@ -116,9 +117,12 @@
         };
         const $$pad = (dis) => body.querySelectorAll('.auth-pad button').forEach((b) => { b.disabled = dis; });
         const shake = () => { const d = $('.auth-dots', body); if (d) { d.classList.remove('shake'); void d.offsetWidth; d.classList.add('shake'); } };
+        body.onchange = (e) => {
+          if (!e.target.classList.contains('auth-select')) return;
+          who = e.target.value; pin = ''; draw();
+          const b = $('.auth-pad [data-d="1"]', body); if (b) b.focus({ preventScroll: true });
+        };
         body.onclick = (e) => {
-          const nb = e.target.closest('[data-n]');
-          if (nb) { who = nb.dataset.n; pin = ''; draw(); return; }
           const k = e.target.closest('[data-d]');
           if (!k || k.disabled) return;
           const d = k.dataset.d;
