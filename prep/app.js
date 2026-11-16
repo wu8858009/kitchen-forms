@@ -1,7 +1,7 @@
 /* 備料交接日誌 — 依紙本「碧水堂廚房交接表」：時程、站區分配、交接事項、預估銷售量（平日／假日）、早上／下午／晚上交接、值班主管簽名，可列印 A4 交接表 */
 (() => {
   'use strict';
-  const VERSION = '2.3.0';
+  const VERSION = '2.3.1';
   const DESK = new URLSearchParams(location.search).has('desktop');
   const IS_MOBILE = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 
@@ -843,6 +843,27 @@
       }
     });
   }
+
+
+  // ------------------------------------------------------------------ 自動更新：發現網站有新版就存好資料、重新載入
+  // （手機主畫面的 App 常常不會真的重新開啟，所以切回來時自己檢查一次）
+  let updAt = 0;
+  async function checkUpdate() {
+    if (DESK || !location.protocol.startsWith('http') || Date.now() - updAt < 60 * 1000) return;
+    updAt = Date.now();
+    try {
+      const mine = (([...document.scripts].map((x) => x.src).find((x) => /app\.js\?v=\d+/.test(x)) || '').match(/\?v=(\d+)/) || [])[1];
+      const html = await (await fetch(location.pathname + '?u=' + Date.now(), { cache: 'no-store' })).text();
+      const live = (html.match(/app\.js\?v=(\d+)/) || [])[1];
+      if (mine && live && +live > +mine) {
+        toast('有新版，更新中…', 3000);
+        try { if (saveTimer) await flush(); } catch (e) { /* */ }
+        setTimeout(() => location.reload(), 600);
+      }
+    } catch (e) { /* 沒網路就算了 */ }
+  }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkUpdate(); });
+  setTimeout(checkUpdate, 4000);
 
   // ------------------------------------------------------------------ 啟動
   document.addEventListener('keydown', (e) => {
