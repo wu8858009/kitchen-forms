@@ -51,10 +51,9 @@
       const x = c[m]; if (!x || !x.url) continue;
       const cur = all[m] || {};
       const kk = m === 'sop' || m === 'equip';
-      const same = cur.url === x.url && (kk ? cur.key === x.key : cur.pw === x.pw) && (m !== 'energy' || cur.user === x.user) && !cur.off;
+      const same = cur.url === x.url && (kk ? cur.key === x.key : cur.pw === x.pw) && !cur.off;
       if (same || (cur.off && (cur.at || 0) > (x.at || 0))) continue; // 這台自己後來停用的就不蓋掉
       all[m] = kk ? { url: x.url, key: x.key, at: x.at, from: 'admin' } : { url: x.url, pw: x.pw, at: x.at, from: 'admin' };
-      if (m === 'energy') all[m].user = x.user;
       ch = true;
     }
     if (ch) { try { localStorage.setItem('kitchenforms-cloud', JSON.stringify(all)); } catch (e) { /* */ } }

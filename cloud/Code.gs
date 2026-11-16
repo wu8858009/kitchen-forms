@@ -179,7 +179,6 @@ function cloudSet_(me, q) {
   if (q.cfg && q.cfg.url) {
     const x = { url: String(q.cfg.url).slice(0, 300), at: Date.now(), by: me.name };
     if (m === 'sop' || m === 'equip') x.key = String(q.cfg.key || ''); else x.pw = String(q.cfg.pw || '');
-    if (m === 'energy') x.user = String(q.cfg.user || '').slice(0, 60); // 水電瓦斯抄表：它自己的帳號＋密碼
     c[m] = x;
   } else delete c[m];
   PropertiesService.getScriptProperties().setProperty('CLOUD_CFG', JSON.stringify(c));
