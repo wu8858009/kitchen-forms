@@ -95,7 +95,7 @@
   function watch(f) {
     subs.push(f);
     if (timer || !url || DESK) return;
-    timer = setInterval(() => { if (!document.hidden) check(); }, 15000);
+    timer = setInterval(() => { if (!document.hidden) check(); }, 20000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
     window.addEventListener('online', check);
     window.addEventListener('pageshow', (e) => { if (e.persisted) check(); });
