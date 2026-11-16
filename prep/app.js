@@ -1,7 +1,7 @@
 /* 備料交接日誌 — 依紙本「碧水堂廚房交接表」：時程、站區分配、交接事項、預估銷售量（平日／假日）、早上／下午／晚上交接、值班主管簽名，可列印 A4 交接表 */
 (() => {
   'use strict';
-  const VERSION = '2.4.0';
+  const VERSION = '2.4.1';
   const DESK = new URLSearchParams(location.search).has('desktop');
   const IS_MOBILE = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 
@@ -897,6 +897,6 @@
     route();
     if (token()) { setStatus(syncLabel()); syncNow(); }
   }
-  window.__prep = { get db() { return db; }, flush, dayStats, sheetPages, buildPdf, syncNow, flat, unflat, VERSION };
+  window.__prep = { get db() { return db; }, flush, dayStats, sheetPages, buildPdf, syncNow, poll: pollSync, flat, unflat, VERSION };
   init();
 })();
