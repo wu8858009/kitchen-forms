@@ -112,14 +112,14 @@
   let BG = false;
   try { BG = window.top !== window; } catch (e) { BG = true; }
   if (BG) {
-    const md = (location.pathname.match(/\/(fridge|prep|dish|meal|sop|equip)\//) || [])[1];
+    const md = (location.pathname.match(/\/(fridge|prep|dish|meal|sop|equip|energy)\//) || [])[1];
     if (md && window.KitchenAuth && !window.KitchenAuth.can(md)) { location.replace('about:blank'); return; }
     applyCloudCfg(md, () => {}); // 背景也照首頁（管理者分發）的設定連上雲端
     if (md === 'equip') equipAuto();
     return;
   }
   // 權限：沒有這個系統權限（或還沒登入）就回首頁
-  const mod = (location.pathname.match(/\/(fridge|prep|dish|meal|sop|equip)\//) || [])[1];
+  const mod = (location.pathname.match(/\/(fridge|prep|dish|meal|sop|equip|energy)\//) || [])[1];
   if (mod && window.KitchenAuth && !window.KitchenAuth.can(mod)) { location.replace(home); return; }
   // 開著的時候權限被取消、帳號被停用：存好資料再回首頁
   if (mod && window.KitchenAuth && window.KitchenAuth.on) {
@@ -160,9 +160,9 @@
   a.addEventListener('click', goHome);
   // 放進標題列（設備管家的大螢幕是左邊側邊欄）；畫面重畫後（例如登入後）再補上
   function placeHome() {
-    const tops = document.querySelectorAll('header.top, header.topbar, aside.side');
+    const tops = document.querySelectorAll(mod === 'energy' ? '.topbar-inner' : 'header.top, header.topbar, aside.side');
     // 設備管家登入畫面沒有標題列：先放一個浮在左上角的按鈕
-    if (mod === 'equip' && !tops.length) {
+    if ((mod === 'equip' || mod === 'energy') && !tops.length) {
       if (!a.isConnected) { a.classList.add('kn-float'); document.body.append(a); }
       return;
     }
@@ -181,10 +181,10 @@
     }
   }
   placeHome();
-  if (mod === 'equip') {
-    equipAuto();
+  if (mod === 'equip' || mod === 'energy') {
+    if (mod === 'equip') equipAuto();
     let qd = 0;
-    new MutationObserver(() => { if (!qd) qd = requestAnimationFrame(() => { qd = 0; placeHome(); if (document.querySelector('.auth') && window.SG && SG.auth && !SG.auth.current) equipAuto(); }); }).observe(document.body, { childList: true, subtree: true });
+    new MutationObserver(() => { if (!qd) qd = requestAnimationFrame(() => { qd = 0; placeHome(); if (mod === 'equip' && document.querySelector('.auth') && window.SG && SG.auth && !SG.auth.current) equipAuto(); }); }).observe(document.body, { childList: true, subtree: true });
   }
 
   // 首頁「雲端同步」統一設定：冰箱、菜品打開時，用它們自己的連線流程套用首頁存的網址和密碼

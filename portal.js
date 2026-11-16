@@ -1,7 +1,7 @@
 /* 廚房專用表格系統 — 首頁儀表板：冰箱溫度、備料交接、菜品銷售、員工餐四個系統的入口與今日重點 */
 (() => {
   'use strict';
-  const VERSION = '1.12.1';
+  const VERSION = '1.13.0';
   const DESK = new URLSearchParams(location.search).has('desktop');
   const Q = DESK ? '?desktop=1' : '';
   const $ = (s, r = document) => r.querySelector(s);
@@ -363,6 +363,13 @@
       ${pills.length ? `<div class="hero-p">${pills.join('')}</div>` : ''}`;
   }
 
+  // ------------------------------------------------------------------ 碧潭水電瓦斯抄表（資料在它自己的雲端，用它自己的帳號登入）
+  function energyCard() {
+    const body = '<p class="note">碧潭商店街水電瓦斯抄錶：各店號水、電、瓦斯的抄錶、用量與費用、報表與圖表、照片紀錄。資料在 Google 試算表，手機、電腦同一份（跟原本的網站一模一樣，用它自己的帳號登入）。</p>';
+    return card('energy', '⚡', '碧潭水電瓦斯抄表', '抄錶・用量費用・報表・圖表・照片', body,
+      `<a class="btn" href="energy/index.html${Q}" data-mod="energy">開啟</a>`);
+  }
+
   function card(cls, ic, title, sub, body, foot) {
     return `<article class="card ${cls}" data-mod="${cls}"><div class="card-h"><div class="ic">${ic}</div><h2>${title}<small>${sub}</small></h2><button class="drag" type="button" aria-label="拖曳調整順序" title="按住拖曳，調整卡片順序">⠿</button></div>
       <div class="card-b">${body}</div><div class="card-f">${foot}</div></article>`;
@@ -525,7 +532,7 @@
     const shopT = shop ? `${shop}・廚房表格` : '廚房專用表格系統';
     if ($('#shop').textContent !== shopT) $('#shop').textContent = shopT;
     // 只顯示這個人有權限的系統
-    const cards = [['fridge', () => fridgeCard(fs)], ['prep', () => prepCard(ps)], ['dish', () => dishCard(ds)], ['meal', () => mealCard(ms, mi)], ['sop', () => sopCard(ss)], ['equip', () => equipCard(es)]].filter(([m]) => AUTH.can(m));
+    const cards = [['fridge', () => fridgeCard(fs)], ['prep', () => prepCard(ps)], ['dish', () => dishCard(ds)], ['meal', () => mealCard(ms, mi)], ['sop', () => sopCard(ss)], ['equip', () => equipCard(es)], ['energy', () => energyCard()]].filter(([m]) => AUTH.can(m));
     // 依這台裝置自己排的順序（拖曳卡片右上角的 ⠿）
     const ord = cardOrder(), at = (m, i) => { const k = ord.indexOf(m); return k < 0 ? 100 + i : k; };
     cards.forEach((c, i) => { c[2] = at(c[0], i); }); cards.sort((a, b) => a[2] - b[2]);
@@ -563,7 +570,7 @@
   $('#refresh').addEventListener('click', () => { render(true).then(() => toast('已更新')); });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'F5') { e.preventDefault(); render(); }
-    if (e.altKey && ['1', '2', '3', '4', '5', '6'].includes(e.key)) { e.preventDefault(); const m = ({ 1: 'fridge', 2: 'dish', 3: 'meal', 4: 'prep', 5: 'sop', 6: 'equip' })[e.key]; if (AUTH.can(m)) location.href = m + `/index.html${Q}`; else toast('你沒有這個系統的權限'); }
+    if (e.altKey && ['1', '2', '3', '4', '5', '6', '7'].includes(e.key)) { e.preventDefault(); const m = ({ 1: 'fridge', 2: 'dish', 3: 'meal', 4: 'prep', 5: 'sop', 6: 'equip', 7: 'energy' })[e.key]; if (AUTH.can(m)) location.href = m + `/index.html${Q}`; else toast('你沒有這個系統的權限'); }
   });
   // 從各系統回到首頁、或切回這個視窗時更新數字
   document.addEventListener('visibilitychange', () => { if (!document.hidden) render(); });

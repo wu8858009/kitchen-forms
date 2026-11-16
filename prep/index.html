@@ -9,8 +9,8 @@
 <title>備料交接日誌</title>
 <link rel="icon" href="../icons/icon-192.png">
 <link rel="stylesheet" href="styles.css?v=6">
-<script>(function(){var m=(location.pathname.match(/\/(fridge|prep|dish|meal|sop|equip)\//)||[])[1]||"";var d=document.documentElement;d.classList.add("kf-dark","kf-"+m);if(m==="equip"||m==="fridge"||m==="dish"){d.dataset.theme="dark";new MutationObserver(function(){if(d.dataset.theme!=="dark")d.dataset.theme="dark";}).observe(d,{attributes:true,attributeFilter:["data-theme"]});}})();</script>
-<link rel="stylesheet" href="../kitchen-theme.css?v=1">
+<script>(function(){var m=(location.pathname.match(/\/(fridge|prep|dish|meal|sop|equip|energy)\//)||[])[1]||"";var d=document.documentElement;d.classList.add("kf-dark","kf-"+m);if(m==="equip"||m==="fridge"||m==="dish"){d.dataset.theme="dark";new MutationObserver(function(){if(d.dataset.theme!=="dark")d.dataset.theme="dark";}).observe(d,{attributes:true,attributeFilter:["data-theme"]});}if(m==="energy"){var e=function(){var b=document.body;if(!b)return;b.classList.add("dark-mode");new MutationObserver(function(){if(!b.classList.contains("dark-mode"))b.classList.add("dark-mode");}).observe(b,{attributes:true,attributeFilter:["class"]});};if(document.body)e();else document.addEventListener("DOMContentLoaded",e);}})();</script>
+<link rel="stylesheet" href="../kitchen-theme.css?v=3">
 </head>
 <body>
 <header class="top">
@@ -26,7 +26,7 @@
 <main id="app"><p class="empty">載入中…</p></main>
 <div id="toast" class="toast" hidden></div>
 <script src="app.js?v=14"></script>
-<script src="../auth.js?v=8"></script>
-<script src="../kitchen-nav.js?v=13"></script>
+<script src="../auth.js?v=9"></script>
+<script src="../kitchen-nav.js?v=14"></script>
 </body>
 </html>
