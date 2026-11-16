@@ -40,6 +40,32 @@
       throw new Error(e && e.name === 'AbortError' ? '雲端回應太慢，請再試一次' : '連不上雲端，請確認網路');
     } finally { clearTimeout(t); }
   }
+  // ------------------------------------------------------------------ 管理者分發的雲端連線
+  // 冰箱、菜品、SOP：寫進 'kitchenforms-cloud'，打開（或首頁背景執行）那個系統時用它自己的連線流程連上
+  // 員工餐：直接寫進 'kitchenforms-meal'（首頁和員工餐都讀這個）
+  function applyCloud(c) {
+    if (!c || typeof c !== 'object') return false;
+    let all = {}, ch = false;
+    try { all = JSON.parse(localStorage.getItem('kitchenforms-cloud')) || {}; } catch (e) { all = {}; }
+    for (const m of ['fridge', 'dish', 'sop']) {
+      const x = c[m]; if (!x || !x.url) continue;
+      const cur = all[m] || {};
+      const same = cur.url === x.url && (m === 'sop' ? cur.key === x.key : cur.pw === x.pw) && !cur.off;
+      if (same || (cur.off && (cur.at || 0) > (x.at || 0))) continue; // 這台自己後來停用的就不蓋掉
+      all[m] = m === 'sop' ? { url: x.url, key: x.key, at: x.at, from: 'admin' } : { url: x.url, pw: x.pw, at: x.at, from: 'admin' };
+      ch = true;
+    }
+    if (ch) { try { localStorage.setItem('kitchenforms-cloud', JSON.stringify(all)); } catch (e) { /* */ } }
+    const ml = c.meal;
+    if (ml && ml.url && ml.pw) {
+      let cur = {}; try { cur = JSON.parse(localStorage.getItem('kitchenforms-meal')) || {}; } catch (e) { cur = {}; }
+      if (cur.url !== ml.url || cur.pw !== ml.pw) { try { localStorage.setItem('kitchenforms-meal', JSON.stringify({ url: ml.url, pw: ml.pw })); } catch (e) { /* */ } ch = true; }
+    }
+    const s = get();
+    if (s && s.token) { const k = JSON.stringify(c); if (JSON.stringify(s.cloud || {}) !== k) { s.cloud = c; set(s); } }
+    return ch;
+  }
+
   // ------------------------------------------------------------------ 即時檢查權限
   // 畫面開著時每 15 秒、切回 App 時馬上跟雲端確認一次：權限改了、被停用或刪除，馬上套用（首頁和各系統頁面都會）
   const subs = [];
@@ -56,7 +82,9 @@
       if (r.ok) {
         const changed = JSON.stringify(r.me) !== JSON.stringify(cur.me);
         cur.me = r.me; cur.at = Date.now(); set(cur);
+        const cch = applyCloud(r.cloud);
         if (changed) subs.forEach((f) => f('perm'));
+        else if (cch) subs.forEach((f) => f('cloud'));
       } else if (r.code === 'auth') {
         set({ last: cur.me && cur.me.name });
         subs.forEach((f) => f('out', r.error || '請重新登入'));
@@ -74,5 +102,5 @@
     window.addEventListener('storage', (e) => { if (e.key === LS) subs.forEach((g) => g('storage')); });
     setTimeout(check, 1200);
   }
-  window.KitchenAuth = { get on() { return !!url && !DESK; }, url, MODS, get, set, clear, can, isAdmin, call, dev, check, watch };
+  window.KitchenAuth = { get on() { return !!url && !DESK; }, url, MODS, get, set, clear, can, isAdmin, call, dev, check, watch, applyCloud };
 })();

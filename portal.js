@@ -1,7 +1,7 @@
 /* 廚房專用表格系統 — 首頁儀表板：冰箱溫度、備料交接、菜品銷售、員工餐四個系統的入口與今日重點 */
 (() => {
   'use strict';
-  const VERSION = '1.7.0';
+  const VERSION = '1.8.0';
   const DESK = new URLSearchParams(location.search).has('desktop');
   const Q = DESK ? '?desktop=1' : '';
   const $ = (s, r = document) => r.querySelector(s);
@@ -340,11 +340,13 @@
   function bgFrames(d) {
     if (DESK || !location.protocol.startsWith('http')) return;
     const s = AUTH.get();
+    let cc = {}; try { cc = JSON.parse(localStorage.getItem('kitchenforms-cloud')) || {}; } catch (e) { cc = {}; }
+    const has = (m) => !!(cc[m] && cc[m].url && !cc[m].off);
     const want = {
-      fridge: AUTH.can('fridge') && !!(d.fridge && d.fridge.cloud && d.fridge.cloud.on),
-      dish: AUTH.can('dish') && !!(d.dish && d.dish.cloud && d.dish.cloud.on),
+      fridge: AUTH.can('fridge') && (!!(d.fridge && d.fridge.cloud && d.fridge.cloud.on) || has('fridge')),
+      dish: AUTH.can('dish') && (!!(d.dish && d.dish.cloud && d.dish.cloud.on) || has('dish')),
       prep: AUTH.can('prep') && !!AUTH.url && !!(s && s.token),
-      sop: AUTH.can('sop') && !!(d.sop && d.sop.cloud),
+      sop: AUTH.can('sop') && (!!(d.sop && d.sop.cloud) || has('sop')),
     };
     for (const [m, on] of Object.entries(want)) {
       if (on && !BG[m]) {

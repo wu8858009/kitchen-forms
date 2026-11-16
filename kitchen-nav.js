@@ -3,12 +3,61 @@
   'use strict';
   const DESK = new URLSearchParams(location.search).has('desktop');
   const home = '../index.html' + (DESK ? '?desktop=1' : '');
+  // 首頁「雲端同步」（或管理者分發）的設定：用各系統自己的連線流程連上
+  function applyCloudCfg(md, say) {
+    if (md !== 'fridge' && md !== 'dish' && md !== 'sop') return;
+    let want = null;
+    try { want = (JSON.parse(localStorage.getItem('kitchenforms-cloud')) || {})[md] || null; } catch (e) { want = null; }
+    if (!want) return;
+    let n = 0;
+    const iv = setInterval(async () => {
+      if (md === 'sop') {
+        const K = window.__kitchen;
+        if (!K || !K.db) { if (++n > 120) clearInterval(iv); return; }
+        clearInterval(iv);
+        if (want.off || K.db.cloud) return; // 已經連線（或停用）就不動
+        // SOP 只能從設定頁連線：自動填網址和密碼、按「連線」（新裝置會直接下載雲端資料；兩邊都有資料時會問要怎麼處理）
+        const back = location.hash;
+        location.hash = '#/settings';
+        let m = 0;
+        const iv2 = setInterval(() => {
+          const u = document.getElementById('cloudUrl'), k = document.getElementById('cloudKey'), b = document.querySelector('[data-act="cloud-connect"]');
+          if (!u || !k || !b) { if (++m > 40) clearInterval(iv2); return; }
+          clearInterval(iv2);
+          u.value = want.url; k.value = want.key;
+          say('依管理者設定連線 Google 雲端…');
+          b.click();
+          let w = 0;
+          const iv3 = setInterval(() => {
+            if (window.__kitchen.db.cloud) { clearInterval(iv3); say('✓ 已連線 Google 雲端同步'); if (location.hash === '#/settings') location.hash = back && back !== '#/settings' ? back : '#/'; }
+            else if (++w > 240) clearInterval(iv3);
+          }, 500);
+        }, 250);
+        return;
+      }
+      const M = md === 'fridge' ? window.__fridge : window.__dish;
+      if (!M || !M.db || !M.Cloud) { if (++n > 80) clearInterval(iv); return; }
+      clearInterval(iv);
+      const c = M.db.cloud || {};
+      if (want.off) {
+        if (c.on) { c.on = false; await M.flush(); M.Cloud.start(); say('已依首頁設定停用雲端同步'); }
+        return;
+      }
+      if (c.on && c.url === want.url && c.pw === want.pw) return;
+      try {
+        say('依首頁設定連線 Google 雲端…');
+        const r = await M.connectCloud(want.url, want.pw);
+        if (r) say('✓ 已連線 Google 雲端同步');
+      } catch (e) { say('雲端連線失敗：' + (e && e.message || e) + '（請到首頁「雲端同步」檢查密碼）'); }
+    }, 250);
+  }
   // 首頁的背景同步框架（看不到的小框架）：只負責同步，不放按鈕、不跳轉、不連線設定
   let BG = false;
   try { BG = window.top !== window; } catch (e) { BG = true; }
   if (BG) {
     const md = (location.pathname.match(/\/(fridge|prep|dish|meal|sop)\//) || [])[1];
-    if (md && window.KitchenAuth && !window.KitchenAuth.can(md)) location.replace('about:blank');
+    if (md && window.KitchenAuth && !window.KitchenAuth.can(md)) { location.replace('about:blank'); return; }
+    applyCloudCfg(md, () => {}); // 背景也照首頁（管理者分發）的設定連上雲端
     return;
   }
   // 權限：沒有這個系統權限（或還沒登入）就回首頁
@@ -56,27 +105,5 @@
     if (!e) { e = document.createElement('div'); e.id = 'kn-toast'; e.style.cssText = 'position:fixed;left:50%;bottom:max(24px,env(safe-area-inset-bottom));transform:translateX(-50%);background:#0f172a;color:#fff;padding:10px 16px;border-radius:10px;font-size:14px;z-index:9999;max-width:90vw;box-shadow:0 6px 20px rgba(0,0,0,.3)'; document.body.append(e); }
     e.textContent = msg; e.hidden = false; clearTimeout(kToast.t); kToast.t = setTimeout(() => { e.hidden = true; }, 4000);
   }
-  if (mod === 'fridge' || mod === 'dish') {
-    let want = null;
-    try { want = (JSON.parse(localStorage.getItem('kitchenforms-cloud')) || {})[mod] || null; } catch (e) { want = null; }
-    if (want) {
-      let n = 0;
-      const iv = setInterval(async () => {
-        const M = mod === 'fridge' ? window.__fridge : window.__dish;
-        if (!M || !M.db || !M.Cloud) { if (++n > 80) clearInterval(iv); return; }
-        clearInterval(iv);
-        const c = M.db.cloud || {};
-        if (want.off) {
-          if (c.on) { c.on = false; await M.flush(); M.Cloud.start(); kToast('已依首頁設定停用雲端同步'); }
-          return;
-        }
-        if (c.on && c.url === want.url && c.pw === want.pw) return;
-        try {
-          kToast('依首頁設定連線 Google 雲端…');
-          const r = await M.connectCloud(want.url, want.pw);
-          if (r) kToast('✓ 已連線 Google 雲端同步');
-        } catch (e) { kToast('雲端連線失敗：' + (e && e.message || e) + '（請到首頁「雲端同步」檢查密碼）'); }
-      }, 250);
-    }
-  }
+  applyCloudCfg(mod, kToast);
 })();
