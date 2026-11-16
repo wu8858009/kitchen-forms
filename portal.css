@@ -35,7 +35,12 @@ button { font: inherit; cursor: pointer; }
 .card.fridge { --c: var(--fridge); } .card.dish { --c: var(--dish); } .card.meal { --c: var(--meal); } .card.prep { --c: var(--prep); } .card.sop { --c: #b45309; } .card.equip { --c: #0f766e; }
 .card-h { display: flex; align-items: center; gap: 10px; padding: 14px 16px 6px; }
 .card-h .ic { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; font-size: 22px; background: color-mix(in srgb, var(--c) 12%, #fff); }
-.card-h h2 { margin: 0; font-size: 18px; }
+.card-h h2 { margin: 0; font-size: 18px; flex: 1; min-width: 0; }
+.card-h .drag { flex: none; align-self: flex-start; margin: -4px -6px 0 0; border: 0; background: transparent; color: #94a3b8; font-size: 20px; line-height: 1;
+  padding: 8px 9px; border-radius: 10px; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+.card-h .drag:hover { background: #f1f5f9; color: #475569; }
+.card.dragging { box-shadow: 0 18px 40px rgba(15, 23, 42, .28); transform: rotate(1.2deg) scale(1.02); opacity: .97; cursor: grabbing; }
+.card-ph { border: 2px dashed #cbd5e1; border-radius: 14px; background: rgba(148, 163, 184, .08); }
 .card-h small { display: block; color: var(--muted); font-size: 12px; font-weight: normal; }
 .card-b { padding: 6px 16px 12px; flex: 1; }
 .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 8px; margin: 6px 0 10px; }
