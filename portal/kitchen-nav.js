@@ -62,6 +62,52 @@
       } catch (e) { say('雲端連線失敗：' + (e && e.message || e) + '（請到首頁「雲端同步」檢查密碼）'); }
     }, 250);
   }
+  // 設備管家：不用它自己的登入畫面，用首頁登入的人直接進去
+  // 每個首頁帳號對應一個設備管家帳號（kf_ 開頭、固定 id，所有裝置一樣）；首頁管理者＝設備管家管理員，其他人＝編輯者
+  // 桌面版（沒有首頁登入）用「管理者（電腦版）」
+  let eqBusy = false;
+  function equipAuto() {
+    if (eqBusy) return;
+    eqBusy = true;
+    let hide = document.getElementById('kf-eq-hide');
+    if (!hide) { hide = document.createElement('style'); hide.id = 'kf-eq-hide'; hide.textContent = '.auth{visibility:hidden!important}'; document.head.append(hide); }
+    const done = () => { eqBusy = false; const x = document.getElementById('kf-eq-hide'); if (x) x.remove(); };
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    (async () => {
+      for (let i = 0; i < 150; i++) { // 等設備管家載入完、決定好要顯示哪個畫面
+        const G = window.SG;
+        if (G && G.auth && G.db && G.db.loaded && (G.auth.current || document.querySelector('.auth'))) break;
+        await sleep(200);
+      }
+      const G = window.SG;
+      if (!G || !G.auth || !G.db || !G.db.loaded || G.auth.current) return done();
+      // 有分發的雲端設定：先等雲端資料（含帳號）下載完
+      let want = null;
+      try { want = (JSON.parse(localStorage.getItem('kitchenforms-cloud')) || {}).equip || null; } catch (e) { want = null; }
+      if (want && want.url && !want.off) {
+        for (let i = 0; i < 60 && !(G.sync.enabled() && G.sync.state !== 'syncing'); i++) await sleep(500);
+      }
+      const A = window.KitchenAuth, ss = A && A.on ? A.get() : null;
+      if (A && A.on && !(ss && ss.me)) return done(); // 首頁還沒登入（照理會被送回首頁）
+      const me = ss && ss.me ? { name: ss.me.name, admin: ss.me.role === 'admin' } : { name: '管理者（電腦版）', admin: true, desk: true };
+      let h = 2166136261;
+      for (const ch of (me.desk ? '#desktop' : me.name)) { h ^= ch.codePointAt(0); h = Math.imul(h, 16777619) >>> 0; }
+      const id = 'kf_' + h.toString(36);
+      const role = me.admin ? 'admin' : 'editor';
+      let u = G.db.get('users', id);
+      if (u && u.disabled) return done(); // 設備管家裡被停用的：照原本的登入畫面
+      if (!u) {
+        const rnd = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
+        u = G.db.put('users', { id, username: id, name: me.name, role, salt: rnd(), hash: (rnd() + rnd() + rnd() + rnd()).slice(0, 64), disabled: false });
+      } else if (u.role !== role || u.name !== me.name) {
+        u = G.db.put('users', Object.assign({}, u, { role, name: me.name }));
+      }
+      G.auth.saveSession(u, true);
+      try { G.db.saveNow(); } catch (e) { /* */ }
+      await sleep(400);
+      location.reload(); // 設備管家重新開啟時就直接進去了
+    })().catch(done);
+  }
   // 首頁的背景同步框架（看不到的小框架）：只負責同步，不放按鈕、不跳轉、不連線設定
   let BG = false;
   try { BG = window.top !== window; } catch (e) { BG = true; }
@@ -69,6 +115,7 @@
     const md = (location.pathname.match(/\/(fridge|prep|dish|meal|sop|equip)\//) || [])[1];
     if (md && window.KitchenAuth && !window.KitchenAuth.can(md)) { location.replace('about:blank'); return; }
     applyCloudCfg(md, () => {}); // 背景也照首頁（管理者分發）的設定連上雲端
+    if (md === 'equip') equipAuto();
     return;
   }
   // 權限：沒有這個系統權限（或還沒登入）就回首頁
@@ -135,8 +182,9 @@
   }
   placeHome();
   if (mod === 'equip') {
+    equipAuto();
     let qd = 0;
-    new MutationObserver(() => { if (!qd) qd = requestAnimationFrame(() => { qd = 0; placeHome(); }); }).observe(document.body, { childList: true, subtree: true });
+    new MutationObserver(() => { if (!qd) qd = requestAnimationFrame(() => { qd = 0; placeHome(); if (document.querySelector('.auth') && window.SG && SG.auth && !SG.auth.current) equipAuto(); }); }).observe(document.body, { childList: true, subtree: true });
   }
 
   // 首頁「雲端同步」統一設定：冰箱、菜品打開時，用它們自己的連線流程套用首頁存的網址和密碼
