@@ -98,12 +98,18 @@
   a.innerHTML = '<span>⌂</span>首頁';
   async function goHome(e) {
     e.preventDefault();
+    await saveAll();
+    location.href = home;
+  }
+  // 各系統把還沒存的資料存好（回首頁、自動更新前都會用）
+  async function saveAll() {
     const m = window.__fridge || window.__dish || window.__meal || window.__prep;
     try { if (m && m.flush) await Promise.race([m.flush(), new Promise((r) => setTimeout(r, 3000))]); } catch (err) { /* 照樣回首頁 */ }
     if (mod === 'sop') { window.dispatchEvent(new Event('pagehide')); await new Promise((r) => setTimeout(r, 400)); } // SOP 收到 pagehide 會把還沒存的資料存好
     if (mod === 'equip' && window.SG && SG.db && SG.db.saveNow) { try { SG.db.saveNow(); } catch (err) { /* */ } await new Promise((r) => setTimeout(r, 300)); }
-    location.href = home;
   }
+  // 網站有新版：自動存好資料、重新載入
+  if (window.KitchenUpdate) window.KitchenUpdate.start(saveAll);
   a.addEventListener('click', goHome);
   // 放進標題列（設備管家的大螢幕是左邊側邊欄）；畫面重畫後（例如登入後）再補上
   function placeHome() {

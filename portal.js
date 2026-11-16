@@ -1,7 +1,7 @@
 /* 廚房專用表格系統 — 首頁儀表板：冰箱溫度、備料交接、菜品銷售、員工餐四個系統的入口與今日重點 */
 (() => {
   'use strict';
-  const VERSION = '1.9.0';
+  const VERSION = '1.10.0';
   const DESK = new URLSearchParams(location.search).has('desktop');
   const Q = DESK ? '?desktop=1' : '';
   const $ = (s, r = document) => r.querySelector(s);
@@ -494,6 +494,7 @@
   document.addEventListener('visibilitychange', () => { if (!document.hidden) checkUpdate(); });
   setTimeout(checkUpdate, 4000);
 
+  if (window.KitchenUpdate) window.KitchenUpdate.start(); // 首頁、登入畫面、各管理畫面也會自動更新
   window.__kitchen = { render, get data() { return last; }, VERSION };
   render();
   if (!DESK && 'serviceWorker' in navigator && location.protocol.startsWith('http')) {
