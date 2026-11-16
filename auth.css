@@ -176,3 +176,5 @@
 .pp-en .chip { border: 1px solid #2a3a57; background: #0c1527; color: #cbd5e1; border-radius: 999px; padding: 4px 12px; font-size: 13px; cursor: pointer; font: inherit; font-size: 13px; }
 .pp-en .chip:hover { background: #16223a; }
 .pp-en .chip.on { background: rgba(217, 153, 0, .22); border-color: #d99900; color: #fde68a; }
+.pp-en .chip.stale { border-style: dashed; border-color: #f87171; color: #fca5a5; }
+.pp-en .en-note.bad { color: #fca5a5; }

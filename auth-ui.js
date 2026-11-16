@@ -287,7 +287,8 @@
     const gs = [...new Set([...enGroups, ...en.g])];
     const cfg = (() => { try { return !!(JSON.parse(localStorage.getItem('kitchenforms-cloud')) || {}).energy; } catch (e) { return false; } })();
     return `<div class="pp-en"><div class="en-r"><span class="en-t">⚡ 抄表權限</span><div class="seg">${EN_LV.map(([v, t]) => `<button data-a="enlv" data-v="${v}" class="${en.lv === v ? 'on' : ''}">${t}</button>`).join('')}</div></div>
-      <div class="en-r en-g"><span class="en-t">可以看的區域</span><button data-a="eng" data-v="" class="chip${all ? ' on' : ''}">全部</button>${gs.map((g) => `<button data-a="eng" data-v="${esc(g)}" class="chip${!all && en.g.includes(g) ? ' on' : ''}">${esc(g)}</button>`).join('')}
+      <div class="en-r en-g"><span class="en-t">可以看的區域</span><button data-a="eng" data-v="" class="chip${all ? ' on' : ''}">全部</button>${gs.map((g) => { const stale = enGroups.length && !enGroups.includes(g); return `<button data-a="eng" data-v="${esc(g)}" class="chip${!all && en.g.includes(g) ? ' on' : ''}${stale ? ' stale' : ''}"${stale ? ' title="抄表裡這個區域沒有任何站點，選了也看不到資料（點一下取消）"' : ''}>${stale ? '⚠ ' : ''}${esc(g)}</button>`; }).join('')}
+      ${!all && enGroups.length && en.g.every((g) => !enGroups.includes(g)) ? '<span class="en-note bad">⚠ 選的區域都沒有站點，這個人打開抄表會是空的</span>' : ''}
       ${gs.length ? '' : `<span class="en-note">${cfg ? '（讀取區域中…）' : '（先到「雲端同步」設定抄表的同步密碼，才會列出區域）'}</span>`}</div></div>`;
   }
   const permBoxes = (p, dis) => Object.keys(A.MODS).map((m) => `<label class="sw${p.perms[m] ? ' on' : ''}${dis ? ' dis' : ''}"><input type="checkbox" data-m="${m}" ${p.perms[m] ? 'checked' : ''} ${dis ? 'disabled' : ''}><span>${ICON[m]} ${SHORT[m]}</span></label>`).join('');
