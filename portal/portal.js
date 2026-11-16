@@ -1,7 +1,7 @@
 /* 廚房專用表格系統 — 首頁儀表板：冰箱溫度、備料交接、菜品銷售、員工餐四個系統的入口與今日重點 */
 (() => {
   'use strict';
-  const VERSION = '1.2.0';
+  const VERSION = '1.3.0';
   const DESK = new URLSearchParams(location.search).has('desktop');
   const Q = DESK ? '?desktop=1' : '';
   const $ = (s, r = document) => r.querySelector(s);
@@ -43,23 +43,45 @@
   const parse = (t) => { try { return t ? JSON.parse(t) : null; } catch (e) { return null; } };
   const mealConf = () => { try { return JSON.parse(localStorage.getItem(LS_MEAL)) || {}; } catch (e) { return {}; } };
 
-  // ------------------------------------------------------------------ 讀取三個系統的資料
-  async function loadAll() {
+  // ------------------------------------------------------------------ 讀取各系統的資料
+  // 冰箱、菜品、備料都在這台裝置，馬上就讀得到；員工餐在 Google 雲端，比較慢，所以另外在背景讀（見 fetchMeal）
+  async function loadLocal() {
     if (DESK) {
       const r = parse(await (await api()).dash()) || {};
       return { fridge: parse(r.fridge), dish: parse(r.dish), prep: parse(r.prep), meal: parse(r.meal), mealInfo: r.meal_info || {} };
     }
     const [f, d, p] = await Promise.all([idbGet('fridgetemp'), idbGet('dishsales'), idbGet('kitchenprep')]);
-    let meal = null; const mealInfo = {};
+    return { fridge: parse(f), dish: parse(d), prep: parse(p) };
+  }
+  // 員工餐：上次從雲端算好的摘要先顯示，背景更新完再換上
+  const LS_MEALC = 'kitchenforms-meal-cache';
+  const mealCache = () => { try { return JSON.parse(localStorage.getItem(LS_MEALC)) || null; } catch (e) { return null; } };
+  const meal = { s: null, at: 0, error: '', loading: false, fetched: 0 };
+  { const c = mealCache(); if (c && c.s) { meal.s = c.s; meal.at = c.at || 0; } }
+  async function fetchMeal(force) {
     const mc = mealConf();
-    if (mc.pw) {
-      try {
-        const res = await fetch(mc.url || window.MEAL_CLOUD_URL, { method: 'POST', body: JSON.stringify({ action: 'load', pw: mc.pw }) });
-        const j = await res.json();
-        if (j.ok) meal = j.data; else mealInfo.error = j.error || '讀取失敗';
-      } catch (e) { mealInfo.error = '連不上雲端（' + (e.message || e) + '）'; }
-    }
-    return { fridge: parse(f), dish: parse(d), prep: parse(p), meal, mealInfo };
+    if (DESK || !mc.pw || meal.loading) return;
+    if (!force && Date.now() - meal.fetched < 60 * 1000) return; // 一分鐘內不重複抓
+    meal.loading = true; paintMeal();
+    const ac = window.AbortController ? new AbortController() : null;
+    const to = setTimeout(() => ac && ac.abort(), 20000);
+    try {
+      const res = await fetch(mc.url || window.MEAL_CLOUD_URL, { method: 'POST', body: JSON.stringify({ action: 'load', pw: mc.pw }), signal: ac ? ac.signal : undefined });
+      const j = await res.json();
+      if (j.ok) {
+        meal.s = mealSummary(j.data, new Date()); meal.at = Date.now(); meal.error = '';
+        try { localStorage.setItem(LS_MEALC, JSON.stringify({ s: meal.s, at: meal.at })); } catch (e) { /* 空間不足就算了 */ }
+      } else meal.error = j.error || '讀取失敗';
+    } catch (e) { meal.error = e && e.name === 'AbortError' ? '雲端回應太慢，稍後再按「更新」' : '連不上雲端（' + (e.message || e) + '）'; }
+    clearTimeout(to);
+    meal.loading = false; meal.fetched = Date.now();
+    paintMeal();
+  }
+  function paintMeal() {
+    const el = $('.card.meal');
+    if (!el) return;
+    el.outerHTML = mealCard(meal.s, { error: meal.error, loading: meal.loading, at: meal.at, pw: !!mealConf().pw });
+    if (window.__kitchen.summary) window.__kitchen.summary.meal = meal.s;
   }
 
   // ------------------------------------------------------------------ 冰箱溫度
@@ -200,7 +222,7 @@
     if (!s) {
       if (DESK) body = info.exe ? '<p class="note">找不到員工餐電腦版的資料檔（meal_data.json）。按「開啟」可直接使用網頁版（資料在 Google 試算表，跟電腦版同一份）。</p>'
         : '<p class="note">按「開啟」使用員工餐網頁版（資料在 Google 試算表，跟電腦版同一份）。要開電腦版程式，請按「程式位置…」選擇「碧水堂員工餐.exe」。</p>';
-      else body = info.error ? `<p class="note bad">${esc(info.error)}</p>`
+      else body = info.loading ? '<p class="note">☁️ 正在讀取雲端資料…</p>' : info.error ? `<p class="note bad">${esc(info.error)}</p>`
         : '<p class="note">按「開啟」，第一次輸入電腦版「雲端同步」的密碼，就能在這裡記帳、看本期預算（資料跟電腦版同一份）。</p>';
     } else {
       const lvl = s.remain < 0 || s.pct >= s.danger ? 'bad' : s.pct >= s.warn ? 'warn' : '';
@@ -211,6 +233,11 @@
         </div>
         <div class="bar ${lvl}"><i style="width:${Math.min(100, s.pct * 100).toFixed(1)}%"></i></div>
         <p class="note">結算週期 ${s.range}（還有 ${s.daysLeft} 天）・預算 ${money(s.budget)}${s.reserve ? '・拜拜預扣 ' + money(s.reserve) : ''}・已用 ${(s.pct * 100).toFixed(0)}%${s.last ? '・最後記帳 ' + s.last.slice(5).replace('-', '/') : ''}</p>`;
+    }
+    if (s && !DESK) {
+      const t = info.at ? new Date(info.at) : null;
+      body += info.loading ? '<p class="note">☁️ 正在更新雲端資料…</p>'
+        : info.error ? `<p class="note bad">${esc(info.error)}${t ? `（目前顯示 ${t.getMonth() + 1}/${t.getDate()} ${pad(t.getHours())}:${pad(t.getMinutes())} 的資料）` : ''}</p>` : '';
     }
     if (DESK && info.exe) body += `<p class="note">程式：<code>${esc(info.exe)}</code></p>`;
     return card('meal', '🍚', '員工餐金額總計', '餐費記帳・食材單價・叫貨・排班・菜單・食譜', body, btns.join(''));
@@ -257,20 +284,23 @@
 
   // ------------------------------------------------------------------ 畫面
   let last = null;
-  async function render() {
+  async function render(force) {
     const now = new Date();
     $('#today').textContent = `${now.getFullYear()}/${now.getMonth() + 1}/${now.getDate()}（${WD[now.getDay()]}）`;
     let d;
-    try { d = await loadAll(); } catch (e) { d = { mealInfo: { error: String(e.message || e) } }; }
+    try { d = await loadLocal(); } catch (e) { d = {}; }
     last = d;
-    const fs = fridgeSummary(d.fridge, now), ds = dishSummary(d.dish, now), ms = mealSummary(d.meal, now), ps = prepSummary(d.prep, now);
+    const fs = fridgeSummary(d.fridge, now), ds = dishSummary(d.dish, now), ps = prepSummary(d.prep, now);
+    const ms = DESK ? mealSummary(d.meal, now) : meal.s;
+    const mi = DESK ? (d.mealInfo || {}) : { error: meal.error, loading: meal.loading || (!meal.fetched && !!mealConf().pw), at: meal.at, pw: !!mealConf().pw };
     const shop = (fs && fs.shop) || (ds && ds.shop) || '';
     $('#shop').textContent = shop ? `${shop}・廚房表格` : '廚房專用表格系統';
-    $('#cards').innerHTML = fridgeCard(fs) + prepCard(ps) + dishCard(ds) + mealCard(ms, d.mealInfo || {});
+    $('#cards').innerHTML = fridgeCard(fs) + prepCard(ps) + dishCard(ds) + mealCard(ms, mi);
     $('#foot').innerHTML = `廚房專用表格系統 v${VERSION}${DESK ? '（桌面版）' : ''}・更新於 ${pad(now.getHours())}:${pad(now.getMinutes())}`
       + (DESK ? '<br>冰箱、菜品的資料與原本的單獨程式共用同一份（%APPDATA%），雲端同步設定也沿用；員工餐的資料在 Google 試算表，跟電腦版同一份。'
         : '<br>冰箱、菜品的資料存在這台裝置，並可各自在設定頁連線 Google 雲端同步；員工餐的資料在 Google 試算表，跟電腦版同一份。');
     window.__kitchen.summary = { fridge: fs, dish: ds, meal: ms, prep: ps };
+    fetchMeal(force);
   }
 
   document.addEventListener('click', async (e) => {
@@ -283,10 +313,10 @@
     }
     if (a === 'meal-pick') {
       const r = await (await api()).pick_meal();
-      if (r) { toast('已設定：' + r); render(); }
+      if (r) { toast('已設定：' + r); render(true); }
     }
   });
-  $('#refresh').addEventListener('click', () => { render().then(() => toast('已更新')); });
+  $('#refresh').addEventListener('click', () => { render(true).then(() => toast('已更新')); });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'F5') { e.preventDefault(); render(); }
     if (e.altKey && ['1', '2', '3', '4'].includes(e.key)) { e.preventDefault(); location.href = ({ 1: 'fridge', 2: 'dish', 3: 'meal', 4: 'prep' })[e.key] + `/index.html${Q}`; }
