@@ -215,3 +215,41 @@ body { background: radial-gradient(900px 420px at 0% 0%, #e3ecff 0%, transparent
   .hero h1 .wave { animation: none; }
   .card, .hp, .btn { transition: none; }
 }
+
+/* ====================================================================== 暗色系 */
+:root { --bg: #070d1a; --card: #101a2e; --card-2: #0c1527; --ink: #e6edf7; --muted: #8fa0b8; --line: #22314b; --brand: #60a5fa; color-scheme: dark; }
+body { background: radial-gradient(900px 460px at 0% 0%, rgba(37, 99, 235, .18) 0%, transparent 60%), radial-gradient(800px 420px at 100% 0%, rgba(16, 185, 129, .12) 0%, transparent 55%), var(--bg); color: var(--ink); }
+.top { background: linear-gradient(110deg, #050b17 0%, #0b1a33 60%, #102549 100%); box-shadow: 0 6px 24px rgba(0, 0, 0, .45); border-bottom: 1px solid rgba(255, 255, 255, .06); }
+.hero { background: linear-gradient(120deg, #172554 0%, #1d4ed8 52%, #0369a1 100%); box-shadow: 0 14px 34px rgba(0, 0, 0, .4), inset 0 1px 0 rgba(255, 255, 255, .08); }
+.card { background: var(--card); box-shadow: 0 1px 0 rgba(255, 255, 255, .04) inset, 0 10px 30px rgba(0, 0, 0, .35); border: 1px solid rgba(255, 255, 255, .05); }
+.card::before { background: linear-gradient(180deg, color-mix(in srgb, var(--c) 20%, var(--card)), var(--card)); }
+@media (hover: hover) { .card:not(.dragging):hover { box-shadow: 0 1px 0 rgba(255, 255, 255, .05) inset, 0 18px 40px rgba(0, 0, 0, .5); border-color: color-mix(in srgb, var(--c) 35%, transparent); } }
+.card-h h2 { color: #f1f5fb; }
+.card-h small { color: var(--muted); }
+.card-h .ic { box-shadow: 0 6px 18px color-mix(in srgb, var(--c) 40%, transparent); }
+.card-h .drag { color: #5b6b86; }
+.card-h .drag:hover { background: rgba(255, 255, 255, .08); color: #cbd5e1; }
+.kpi { background: color-mix(in srgb, var(--c) 9%, var(--card-2)); border-color: color-mix(in srgb, var(--c) 22%, #1e2b44); }
+.kpi .l { color: var(--muted); }
+.kpi .v { color: #f1f5fb; }
+.kpi .v small { color: var(--muted); }
+.kpi.ok { background: rgba(34, 197, 94, .1); border-color: rgba(34, 197, 94, .35); } .kpi.ok .v { color: #4ade80; }
+.kpi.warn { background: rgba(245, 158, 11, .1); border-color: rgba(245, 158, 11, .35); } .kpi.warn .v { color: #fbbf24; }
+.kpi.bad { background: rgba(239, 68, 68, .12); border-color: rgba(239, 68, 68, .4); } .kpi.bad .v { color: #f87171; }
+.chip { background: color-mix(in srgb, var(--c) 14%, #16223a); color: #cbd5e1; }
+.chip.ok { background: rgba(34, 197, 94, .16); color: #86efac; } .chip.warn { background: rgba(245, 158, 11, .16); color: #fcd34d; } .chip.bad { background: rgba(239, 68, 68, .18); color: #fca5a5; }
+.note { color: var(--muted); } .note.bad { color: #f87171; } .note code { color: #cbd5e1; }
+.bar { background: #1b2840; }
+.btn.sub { background: transparent; color: color-mix(in srgb, var(--c) 55%, #e6edf7); border-color: color-mix(in srgb, var(--c) 45%, #2a3a57); }
+.btn.sub:hover { background: color-mix(in srgb, var(--c) 14%, transparent); }
+.card-ph { border-color: #34466a; background: rgba(148, 163, 184, .05); }
+.no-perm { background: var(--card); color: var(--muted); }
+.foot { color: #6b7d98; } .foot a { color: #93c5fd; }
+.empty { color: var(--muted); }
+.toast { background: #e6edf7; color: #0b1220; }
+.modal-bg { background: rgba(0, 0, 0, .6); }
+.modal { background: #111b30; color: var(--ink); border: 1px solid #22314b; box-shadow: 0 24px 60px rgba(0, 0, 0, .55); }
+.modal label { color: var(--muted); }
+.modal input { background: #0b1427; color: var(--ink); border-color: #2a3a57; }
+.modal .row .sec { background: #1b2840; color: #cbd5e1; }
+.modal .row .pri { background: #3b82f6; }
