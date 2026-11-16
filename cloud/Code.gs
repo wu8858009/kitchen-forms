@@ -16,7 +16,11 @@
 const SH_PEOPLE = '人員權限';
 const SH_DEV = '登入裝置';
 const MODS = ['fridge', 'prep', 'dish', 'meal', 'sop', 'equip', 'energy'];
-const HEAD = ['姓名', '角色', '冰箱溫度', '備料交接', '菜品銷售', '員工餐', '廚房SOP', '設備管家', '水電瓦斯', '停用', 'PIN雜湊', '更新時間'];
+const HEAD = ['姓名', '角色', '冰箱溫度', '備料交接', '菜品銷售', '員工餐', '廚房SOP', '設備管家', '水電瓦斯', '水電瓦斯權限', '水電瓦斯區域', '停用', 'PIN雜湊', '更新時間'];
+// 水電瓦斯抄表每個人能看什麼：權限（查看／編輯／完整）＋區域（用「、」分開，空白＝全部區域）
+const EN_LV = { '查看': 'View', '編輯': 'Edit', '完整': 'Full' }, EN_LVN = { View: '查看', Edit: '編輯', Full: '完整' };
+function enRead_(lv, g) { return { lv: EN_LV[String(lv == null ? '' : lv).trim()] || 'Edit', g: String(g == null ? '' : g).split(/[、,，\n]+/).map((x) => x.trim()).filter(Boolean) }; }
+function enOf_(p) { return p.role === 'admin' ? { lv: 'Full', g: [] } : (p.en || { lv: 'Edit', g: [] }); }
 const DEV_HEAD = ['Token', '姓名', '登入時間', '裝置', '最後使用'];
 const SH_PREP = '備料資料';
 const PREP_HEAD = ['鍵', '值', '版本', '更新者', '更新時間'];
@@ -34,6 +38,7 @@ function doPost(e) {
     if (a === 'me') return out_(withMe_(q, (me) => ({ ok: true, me: pub_(me), cloud: cloudFor_(me) })));
     if (a === 'prep_rev') return out_(withMe_(q, (me) => (me.role === 'admin' || me.perms.prep ? { ok: true, rev: Number(PropertiesService.getScriptProperties().getProperty('PREP_REV') || 0) } : { ok: false, code: 'perm', error: '你沒有備料交接日誌的權限' })));
     if (a === 'list') return out_(withAdmin_(q, () => ({ ok: true, people: people_().map(pub_), sheet: SpreadsheetApp.getActive().getUrl() })));
+    if (a === 'energy_ticket') return out_(withMe_(q, (me) => energyTicket_(me)));
     const lock = LockService.getScriptLock();
     lock.waitLock(20000);
     try {
@@ -106,13 +111,17 @@ function save_(me, x, token) {
   const isNew = !p;
   if (isNew) {
     if (!pinOk_(String(x.pin || ''))) return { ok: false, error: '新人員要設定 4～8 位數字的 PIN' };
-    p = { name, role: 'staff', perms: allPerms_(false), off: false, h: '', at: 0 };
+    p = { name, role: 'staff', perms: allPerms_(false), en: { lv: 'Edit', g: [] }, off: false, h: '', at: 0 };
     ps.push(p);
   }
   const before = { name: p.name, role: p.role, off: p.off };
   if (x.role === 'admin' || x.role === 'staff') p.role = x.role;
   if (x.perms) MODS.forEach((m) => { if (m in x.perms) p.perms[m] = !!x.perms[m]; });
   if ('off' in x) p.off = !!x.off;
+  if (x.en && typeof x.en === 'object') {
+    const cur = p.en || { lv: 'Edit', g: [] };
+    p.en = { lv: EN_LVN[x.en.lv] ? x.en.lv : cur.lv, g: Array.isArray(x.en.g) ? x.en.g.map((g) => String(g).replace(/[、,，\n]/g, ' ').trim().slice(0, 40)).filter(Boolean).slice(0, 50) : cur.g };
+  }
   if (p.name === me.name && (p.role !== 'admin' || p.off)) return { ok: false, error: '不能把自己改成員工或停用（請另一位管理者來改）' };
   if (!ps.some((y) => y.role === 'admin' && !y.off)) return { ok: false, error: '至少要留一位管理者' };
   const rename = p.name !== name;
@@ -169,8 +178,19 @@ const CLOUD_MODS = ['fridge', 'dish', 'meal', 'sop', 'equip', 'energy'];
 function cloudGet_() { try { return JSON.parse(PropertiesService.getScriptProperties().getProperty('CLOUD_CFG') || '{}'); } catch (e) { return {}; } }
 function cloudFor_(me) {
   const c = cloudGet_(), out = {};
-  CLOUD_MODS.forEach((m) => { if (c[m] && (me.role === 'admin' || (me.perms || {})[m])) out[m] = c[m]; });
+  // 水電瓦斯抄表的同步密碼只給管理者；其他人用 energy_ticket 拿通行證
+  CLOUD_MODS.forEach((m) => { if (c[m] && (me.role === 'admin' || (me.perms || {})[m])) out[m] = m === 'energy' && me.role !== 'admin' ? { url: c[m].url, at: c[m].at } : c[m]; });
   return out;
+}
+// 水電瓦斯抄表的通行證：用同步密碼簽章，寫明是誰、權限等級、可以看的區域（5 分鐘內有效）
+function energyTicket_(me) {
+  if (!(me.role === 'admin' || me.perms.energy)) return { ok: false, code: 'perm', error: '你沒有水電瓦斯抄表的權限' };
+  const c = cloudGet_().energy;
+  if (!c || !c.pw) return { ok: false, code: 'nocfg', error: '管理者還沒有設定水電瓦斯抄表的同步密碼' };
+  const en = enOf_(me);
+  const body = encodeURIComponent(JSON.stringify({ n: me.name, a: me.role === 'admin' ? 1 : 0, lv: en.lv, g: en.g, x: Date.now() + 5 * 60000 }));
+  const sig = Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(body, c.pw, Utilities.Charset.UTF_8)).replace(/=+$/, '');
+  return { ok: true, url: c.url, ticket: body + '.' + sig };
 }
 function cloudSet_(me, q) {
   const m = String(q.mod || '');
@@ -259,7 +279,7 @@ function readPeople_() {
     const role = String(r[col('角色')]).trim() === '管理者' ? 'admin' : 'staff';
     const perms = {};
     MODS.forEach((m, k) => { perms[m] = yes_(r[col(HEAD[2 + k])]); });
-    return { name: String(r[col('姓名')]).trim(), role, perms, off: yes_(r[col('停用')]), h: String(r[col('PIN雜湊')] || ''), at: Number(r[col('更新時間')]) || 0 };
+    return { name: String(r[col('姓名')]).trim(), role, perms, en: enRead_(r[col('水電瓦斯權限')], r[col('水電瓦斯區域')]), off: yes_(r[col('停用')]), h: String(r[col('PIN雜湊')] || ''), at: Number(r[col('更新時間')]) || 0 };
   });
 }
 function writePeople_(ps) {
@@ -269,7 +289,7 @@ function writePeople_(ps) {
   if (n) sh.getRange(2, 1, n, w).clearContent();
   sh.getRange(1, 1, 1, HEAD.length).setValues([HEAD]); // 欄位有增加時，標題列一起更新
   if (!ps.length) return;
-  sh.getRange(2, 1, ps.length, HEAD.length).setValues(ps.map((p) => [p.name, ROLE_N[p.role], ...MODS.map((m) => (p.role === 'admin' || p.perms[m] ? '是' : '')), p.off ? '是' : '', p.h, p.at]));
+  sh.getRange(2, 1, ps.length, HEAD.length).setValues(ps.map((p) => [p.name, ROLE_N[p.role], ...MODS.map((m) => (p.role === 'admin' || p.perms[m] ? '是' : '')), EN_LVN[enOf_(p).lv], enOf_(p).g.join('、'), p.off ? '是' : '', p.h, p.at]));
 }
 function sheet_(name, head) {
   const ss = SpreadsheetApp.getActive();
@@ -283,7 +303,7 @@ function sheet_(name, head) {
 }
 
 // ------------------------------------------------------------------ 小工具
-function pub_(p) { return { name: p.name, role: p.role, perms: p.role === 'admin' ? allPerms_(true) : Object.assign({}, p.perms), off: !!p.off }; }
+function pub_(p) { return { name: p.name, role: p.role, perms: p.role === 'admin' ? allPerms_(true) : Object.assign({}, p.perms), en: enOf_(p), off: !!p.off }; }
 function allPerms_(v) { const o = {}; MODS.forEach((m) => { o[m] = v; }); return o; }
 function yes_(v) { const s = String(v).trim(); return v === true || s === '是' || s === 'TRUE' || s === 'V' || s === 'v' || s === '✓' || s === '1'; }
 function pinOk_(s) { return /^\d{4,8}$/.test(s); }

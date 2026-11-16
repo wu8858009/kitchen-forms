@@ -236,6 +236,7 @@
     adm.addEventListener('click', onAdmClick);
     adm.addEventListener('change', onAdmChange);
     await loadAdmin();
+    loadEnGroups();
     // 每 10 秒看名單有沒有被別的管理者（或試算表）改過；正在輸入時不更新
     const me = adm;
     const iv = setInterval(async () => {
@@ -259,6 +260,36 @@
     } catch (e) { b.innerHTML = `<p class="auth-err">${esc(e.message)}</p><button class="auth-btn" data-a="reload">重新讀取</button>`; return; }
     drawAdmin();
   }
+  // 水電瓦斯抄表：每個人的權限等級＋可以看的區域（區域清單向抄表雲端問，記在這台裝置）
+  let enGroups = (() => { try { return JSON.parse(localStorage.getItem('kitchenforms-energy-groups')) || []; } catch (e) { return []; } })();
+  async function loadEnGroups() {
+    const s = A.get(); if (!s || !s.token || !(() => { try { return !!(JSON.parse(localStorage.getItem('kitchenforms-cloud')) || {}).energy; } catch (e) { return false; } })()) return;
+    const post = (u, b) => fetch(u, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ m: 'POST', p: '/auth/kitchen', t: '', b }) }).then((x) => x.json());
+    try {
+      const r = await A.call('energy_ticket', { token: s.token }); if (!r.ok) return;
+      let j = await post(r.url, { ticket: r.ticket });
+      if (j.s === 409) { // 舊版抄表雲端只存了密碼的雜湊：用同步密碼登入一次後再試
+        const w = (() => { try { return (JSON.parse(localStorage.getItem('kitchenforms-cloud')) || {}).energy || {}; } catch (e) { return {}; } })();
+        if (w.pw && (await post(r.url, { key: w.pw })).s === 200) { const r2 = await A.call('energy_ticket', { token: s.token }); if (r2.ok) j = await post(r2.url, { ticket: r2.ticket }); }
+      }
+      if (!(j.s >= 200 && j.s < 300) || !Array.isArray(j.b.groups)) return;
+      const ch = JSON.stringify(j.b.groups) !== JSON.stringify(enGroups);
+      enGroups = j.b.groups;
+      try { localStorage.setItem('kitchenforms-energy-groups', JSON.stringify(enGroups)); } catch (e) { /* */ }
+      if (ch && adm) drawAdmin();
+    } catch (e) { /* 沒網路 */ }
+  }
+  const EN_LV = [['View', '查看'], ['Edit', '編輯'], ['Full', '完整']];
+  function enBlock(p) {
+    if (p.role === 'admin') return p.perms.energy === false ? '' : '<div class="pp-en"><span class="en-t">⚡ 抄表</span><span class="en-note">管理者：完整權限、全部區域</span></div>';
+    if (!p.perms.energy) return '';
+    const en = p.en || { lv: 'Edit', g: [] }, all = !en.g.length;
+    const gs = [...new Set([...enGroups, ...en.g])];
+    const cfg = (() => { try { return !!(JSON.parse(localStorage.getItem('kitchenforms-cloud')) || {}).energy; } catch (e) { return false; } })();
+    return `<div class="pp-en"><div class="en-r"><span class="en-t">⚡ 抄表權限</span><div class="seg">${EN_LV.map(([v, t]) => `<button data-a="enlv" data-v="${v}" class="${en.lv === v ? 'on' : ''}">${t}</button>`).join('')}</div></div>
+      <div class="en-r en-g"><span class="en-t">可以看的區域</span><button data-a="eng" data-v="" class="chip${all ? ' on' : ''}">全部</button>${gs.map((g) => `<button data-a="eng" data-v="${esc(g)}" class="chip${!all && en.g.includes(g) ? ' on' : ''}">${esc(g)}</button>`).join('')}
+      ${gs.length ? '' : `<span class="en-note">${cfg ? '（讀取區域中…）' : '（先到「雲端同步」設定抄表的同步密碼，才會列出區域）'}</span>`}</div></div>`;
+  }
   const permBoxes = (p, dis) => Object.keys(A.MODS).map((m) => `<label class="sw${p.perms[m] ? ' on' : ''}${dis ? ' dis' : ''}"><input type="checkbox" data-m="${m}" ${p.perms[m] ? 'checked' : ''} ${dis ? 'disabled' : ''}><span>${ICON[m]} ${SHORT[m]}</span></label>`).join('');
   function drawAdmin() {
     const me = A.get().me.name;
@@ -267,7 +298,7 @@
       <div class="adm-list">${people.map((p) => `<div class="pp${p.off ? ' off' : ''}" data-p="${esc(p.name)}">
         <div class="pp-h"><b>${esc(p.name)}</b>${p.name === me ? '<span class="me-tag">我</span>' : ''}${p.off ? '<span class="off-tag">已停用</span>' : ''}
           <div class="seg"><button data-a="role" data-v="staff" class="${p.role === 'staff' ? 'on' : ''}">員工</button><button data-a="role" data-v="admin" class="${p.role === 'admin' ? 'on' : ''}">管理者</button></div></div>
-        <div class="pp-perm">${permBoxes(p, p.role === 'admin')}</div>
+        <div class="pp-perm">${permBoxes(p, p.role === 'admin')}</div>${enBlock(p)}
         <div class="pp-f"><button data-a="ren">✎ 改名</button><button data-a="pin">🔑 重設 PIN</button>
           <button data-a="off">${p.off ? '▶ 恢復使用' : '⏸ 停用'}</button><button data-a="del" class="danger">✕ 刪除</button></div></div>`).join('')}</div>
       <form class="pp add"><div class="pp-h"><b>＋ 新增人員</b></div>
@@ -280,7 +311,7 @@
     $('form.add', b).onsubmit = addPerson;
   }
   async function save(p, extra) {
-    const body = Object.assign({ old: p.name, name: p.name, role: p.role, perms: p.perms, off: p.off }, extra || {});
+    const body = Object.assign({ old: p.name, name: p.name, role: p.role, perms: p.perms, en: p.en, off: p.off }, extra || {});
     try {
       const r = await A.call('save', { token: A.get().token, p: body });
       if (!r.ok) { toast(r.error, 4000); return loadAdmin(); }
@@ -303,6 +334,12 @@
     const box = b.closest('[data-p]'); if (!box) return;
     const p = people.find((x) => x.name === box.dataset.p); if (!p) return;
     if (a === 'role') { if (p.role === b.dataset.v) return; p.role = b.dataset.v; return save(p); }
+    if (a === 'enlv') { const en = p.en || { lv: 'Edit', g: [] }; if (en.lv === b.dataset.v) return; p.en = { lv: b.dataset.v, g: en.g }; return save(p); }
+    if (a === 'eng') {
+      const en = p.en || { lv: 'Edit', g: [] }, v = b.dataset.v;
+      const g = v ? (en.g.includes(v) ? en.g.filter((x) => x !== v) : [...en.g, v]) : [];
+      p.en = { lv: en.lv, g }; return save(p);
+    }
     if (a === 'off') { if (!p.off && !confirm(`停用「${p.name}」？他的裝置會馬上被登出。`)) return; p.off = !p.off; return save(p); }
     if (a === 'pin') { const pin = askPin(`幫「${p.name}」設定新的 PIN`); if (pin) save(p, { pin }); return; }
     if (a === 'ren') {

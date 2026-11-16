@@ -60,6 +60,8 @@ const ctx = {
     computeDigest: (alg, s) => Array.from(crypto.createHash('sha256').update(s, 'utf8').digest()).map((b) => (b > 127 ? b - 256 : b)),
     formatDate: (d) => new Date(d.getTime() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '),
     getUuid: () => crypto.randomUUID(),
+    base64EncodeWebSafe: (b) => Buffer.from(typeof b === 'string' ? Buffer.from(b, 'utf8') : b.map((x) => x & 255)).toString('base64').replace(/\+/g, '-').replace(/\//g, '_'),
+    computeHmacSha256Signature: (v, k) => Array.from(crypto.createHmac('sha256', Buffer.from(k, 'utf8')).update(v, 'utf8').digest()).map((b) => (b > 127 ? b - 256 : b)),
   },
   Session: { getScriptTimeZone: () => 'Asia/Taipei' },
   SpreadsheetApp: { getActive: () => ss, getActiveSpreadsheet: () => ss },

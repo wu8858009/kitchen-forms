@@ -108,42 +108,80 @@
       location.reload(); // 設備管家重新開啟時就直接進去了
     })().catch(done);
   }
-  // 水電瓦斯抄表：不用它自己的登入畫面，用管理者在首頁「雲端同步」分發的同步密碼自動登入
-  // （雲端回 401 時，build_web.py 加的小程式會發出 kf-energy-401；登入時帳號填 __kitchen__，那個小程式會改成用同步密碼登入；
-  //   沒有分發就照原本的登入畫面）
+  // 水電瓦斯抄表：不用它自己的登入畫面
+  // 網頁版：向首頁的權限後端拿「通行證」（寫明是誰、抄表權限、可以看的區域，用同步密碼簽章），抄表雲端照它建立／更新這個人的抄表帳號
+  // 電腦版（沒有首頁登入）：用首頁「雲端同步」設定的同步密碼
+  // 做法：雲端回 401 時（build_web.py 加的小程式發出 kf-energy-401），在它的登入畫面填帳號 __kitchen__、密碼「T:通行證」或同步密碼送出，
+  // 那個小程式會改送到抄表雲端的 /auth/kitchen。沒有設定就照原本的登入畫面。
+  const EN_TOK = 'kitchenforms_energy_token', EN_WHO = 'kitchenforms-energy-who';
   function energyAuto() {
+    const A = window.KitchenAuth, web = !!(A && A.on);
+    const ss = web ? A.get() : null;
     let want = null;
     try { want = (JSON.parse(localStorage.getItem('kitchenforms-cloud')) || {}).energy || null; } catch (e) { want = null; }
-    if (!want || want.off || !want.pw) return;
+    if (web ? !(ss && ss.token && ss.me && want && !want.off && want.url) : !(want && !want.off && want.pw)) return;
     const hide = document.createElement('style');
     hide.textContent = '#loginOverlay{visibility:hidden!important} #mLogout{display:none!important}';
     document.head.append(hide);
     const show = () => { hide.textContent = '#mLogout{display:none!important}'; };
     const ov = document.getElementById('loginOverlay');
     if (!ov) return show();
-    let tries = 0, busy = false;
+    // 管理者這台：先用同步密碼登入一次（舊版抄表雲端只存了密碼的雜湊，用一次後才能檢查通行證）
+    const healKey = web && A.isAdmin() && want.pw ? 'kitchenforms-energy-keyok' : '';
+    const heal = healKey && localStorage.getItem(healKey) !== String(want.at) ? fetch(want.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ m: 'POST', p: '/auth/kitchen', t: '', b: { key: want.pw } }) })
+      .then((r) => r.json()).then((j) => { if (j.s >= 200 && j.s < 300) localStorage.setItem(healKey, String(want.at)); }).catch(() => {}) : Promise.resolve();
+    const ticket = async () => {
+      await heal;
+      const r = await A.call('energy_ticket', { token: A.get().token });
+      if (!r.ok) throw new Error(r.error || '拿不到通行證');
+      return r;
+    };
+    let tries = 0, busy = false, logged = false;
     async function login() {
       if (busy) return;
-      if (++tries > 2) { show(); return; } // 帳號密碼不對：顯示原本的登入畫面（裡面有錯誤訊息）
+      if (++tries > 2) { show(); return; }
       busy = true;
+      let cred = '';
+      try { cred = web ? 'T:' + (await ticket()).ticket : want.pw; } catch (e) { busy = false; tries = 9; show(); kToast(e.message); return; }
       await new Promise((r) => setTimeout(r, 80)); // 讓它自己先把登入畫面準備好
       const u = document.getElementById('loginUsername'), p = document.getElementById('loginPassword'), f = document.getElementById('loginForm');
       if (!u || !p || !f) { busy = false; show(); return; }
       let last = null; try { last = localStorage.getItem('bitan_last_username_v1'); } catch (e) { /* */ }
       const rem = document.getElementById('loginRemember'); if (rem) rem.checked = !!last;
-      u.value = '__kitchen__'; p.value = want.pw;
+      u.value = '__kitchen__'; p.value = cred;
       if (f.requestSubmit) f.requestSubmit(); else f.dispatchEvent(new Event('submit', { cancelable: true }));
       p.value = '';
       const err = document.getElementById('loginError');
       for (let i = 0; i < 150 && ov.classList.contains('open') && !(err && err.classList.contains('show')); i++) await new Promise((r) => setTimeout(r, 200));
       try { if (last == null) localStorage.removeItem('bitan_last_username_v1'); else localStorage.setItem('bitan_last_username_v1', last); } catch (e) { /* 不動原本記住的帳號 */ }
       busy = false;
-      if (ov.classList.contains('open')) { tries = 9; u.value = last || ''; show(); } else tries = 0; // 登入失敗（密碼被改了等）：馬上顯示原本的登入畫面
+      if (ov.classList.contains('open')) { tries = 9; u.value = last || ''; show(); return; } // 登入失敗：馬上顯示原本的登入畫面
+      tries = 0; logged = true;
+      try { localStorage.setItem(EN_WHO, web ? A.get().me.name : '#desktop'); } catch (e) { /* */ }
     }
     window.addEventListener('kf-energy-401', login);
     if (window.__kfE401 && ov.classList.contains('open')) login();
-    // 已經登入過的：它自己會關掉登入畫面；20 秒都沒有反應（例如沒網路）就顯示原本的畫面
-    setTimeout(() => { if (ov.classList.contains('open') && !busy) show(); }, 20000);
+    setTimeout(() => { if (ov.classList.contains('open') && !busy) show(); }, 20000); // 20 秒沒反應（例如沒網路）：顯示原本的畫面
+    if (!web) return;
+    // 管理者改了這個人的抄表權限：用新的通行證登入一次，權限有變就重新載入
+    async function recheck() {
+      if (busy || ov.classList.contains('open') || !A.can('energy')) return;
+      try {
+        const r = await ticket();
+        const res = await fetch(r.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ m: 'POST', p: '/auth/kitchen', t: '', b: { ticket: r.ticket } }) });
+        const j = await res.json();
+        if (!(j.s >= 200 && j.s < 300) || !j.b || !j.b.token) return;
+        const cur = String(localStorage.getItem(EN_TOK) || '').split('.')[0];
+        if (j.b.changed || cur !== j.b.token.split('.')[0]) {
+          localStorage.setItem(EN_TOK, j.b.token);
+          localStorage.setItem(EN_WHO, A.get().me.name);
+          await saveAll();
+          location.reload();
+        }
+      } catch (e) { /* 沒網路：下次再說 */ }
+    }
+    setTimeout(() => { if (!logged) recheck(); }, 2500); // 用上次的登入打開的：確認權限還是一樣
+    A.watch((kind) => { if (kind === 'perm') recheck(); });
   }
   // 首頁的背景同步框架（看不到的小框架）：只負責同步，不放按鈕、不跳轉、不連線設定
   let BG = false;
