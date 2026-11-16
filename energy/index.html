@@ -821,7 +821,7 @@
     *{animation-duration:.001ms !important; transition-duration:.001ms !important;}
   }
 </style>
-<script>(function(){var m=(location.pathname.match(/\/(fridge|prep|dish|meal|sop|equip|energy)\//)||[])[1]||"";var d=document.documentElement;d.classList.add("kf-dark","kf-"+m);if(m==="equip"||m==="fridge"||m==="dish"){d.dataset.theme="dark";new MutationObserver(function(){if(d.dataset.theme!=="dark")d.dataset.theme="dark";}).observe(d,{attributes:true,attributeFilter:["data-theme"]});}if(m==="energy"){var e=function(){var b=document.body;if(!b)return;b.classList.add("dark-mode");new MutationObserver(function(){if(!b.classList.contains("dark-mode"))b.classList.add("dark-mode");}).observe(b,{attributes:true,attributeFilter:["class"]});};if(document.body)e();else document.addEventListener("DOMContentLoaded",e);var of=window.fetch;window.fetch=function(u,o){var k=0;try{if(String(u).indexOf("script.google.com")>=0&&o&&typeof o.body==="string"&&o.body.indexOf("__kitchen__")>=0){var q=JSON.parse(o.body);if(q.p==="/auth/login"&&q.b&&q.b.username==="__kitchen__"){o=Object.assign({},o,{body:JSON.stringify({m:"POST",p:"/auth/kitchen",t:"",b:{key:q.b.password}})});k=1;}}}catch(x){}var p=of.call(this,u,o);try{if(!k&&String(u).indexOf("script.google.com")>=0&&o&&typeof o.body==="string"&&o.body.indexOf("\"p\":")>=0){p.then(function(r){r.clone().json().then(function(j){if(j&&j.s===401){window.__kfE401=1;window.dispatchEvent(new Event("kf-energy-401"));}})["catch"](function(){});})["catch"](function(){});}}catch(x){}return p;};}})();</script>
+<script>(function(){var m=(location.pathname.match(/\/(fridge|prep|dish|meal|sop|equip|energy)\//)||[])[1]||"";var d=document.documentElement;d.classList.add("kf-dark","kf-"+m);if(m==="equip"||m==="fridge"||m==="dish"){d.dataset.theme="dark";new MutationObserver(function(){if(d.dataset.theme!=="dark")d.dataset.theme="dark";}).observe(d,{attributes:true,attributeFilter:["data-theme"]});}if(m==="energy"){var e=function(){var b=document.body;if(!b)return;b.classList.add("dark-mode");new MutationObserver(function(){if(!b.classList.contains("dark-mode"))b.classList.add("dark-mode");}).observe(b,{attributes:true,attributeFilter:["class"]});};if(document.body)e();else document.addEventListener("DOMContentLoaded",e);try{if(!/[?&]desktop/.test(location.search)){var ka=JSON.parse(localStorage.getItem("kitchenforms-auth")||"null"),kw=ka&&ka.me?ka.me.name:"";if(localStorage.getItem("kitchenforms-energy-who")!==kw)localStorage.removeItem("kitchenforms_energy_token");}}catch(x){}var of=window.fetch;window.fetch=function(u,o){var k=0;try{if(String(u).indexOf("script.google.com")>=0&&o&&typeof o.body==="string"&&o.body.indexOf("__kitchen__")>=0){var q=JSON.parse(o.body);if(q.p==="/auth/login"&&q.b&&q.b.username==="__kitchen__"){o=Object.assign({},o,{body:JSON.stringify({m:"POST",p:"/auth/kitchen",t:"",b:(/^T:/.test(q.b.password)?{ticket:q.b.password.slice(2)}:{key:q.b.password})})});k=1;}}}catch(x){}var p=of.call(this,u,o);try{if(!k&&String(u).indexOf("script.google.com")>=0&&o&&typeof o.body==="string"&&o.body.indexOf("\"p\":")>=0){p.then(function(r){r.clone().json().then(function(j){if(j&&j.s===401){window.__kfE401=1;window.dispatchEvent(new Event("kf-energy-401"));}})["catch"](function(){});})["catch"](function(){});}}catch(x){}return p;};}})();</script>
 <link rel="stylesheet" href="../kitchen-theme.css?v=4">
 </head>
 <body>
@@ -1569,7 +1569,7 @@
   // 資料存放位置：填 Google Apps Script「網頁應用程式」網址（…/exec 結尾）＝資料存在 Google 試算表、照片存雲端硬碟；
   // 留空＝沿用同網域的 /api 伺服器（原本的 Render 後端）。兩邊的路徑、欄位、錯誤訊息都一樣。
   const CLOUD_URL = "https://script.google.com/macros/s/AKfycbxose_ffHC10iY2WAxhVVsEIkq-xcSRUu1eHumBms9K_Dq7Nl3m9v-uwCsunXRuVfSj/exec";
-  const LS_CLOUD_TOKEN = "bitan_cloud_token";
+  const LS_CLOUD_TOKEN = "kitchenforms_energy_token";
   const CLOUD_PHOTO_MAX_SIDE = 1600;
   const SYNC_NEUTRAL_PATHS = /^\/(auth\/(heartbeat|offline|login|logout)|photos\/batch)/; // 這些 POST 不會改動抄表資料
   let syncGen = 0; // 每次本機改動資料就加一，用來丟棄改動前就抓好的舊同步資料
@@ -5502,6 +5502,6 @@
 })();
 </script>
 <script src="../auth.js?v=11"></script>
-<script src="../kitchen-nav.js?v=16"></script>
+<script src="../kitchen-nav.js?v=18"></script>
 </body>
 </html>

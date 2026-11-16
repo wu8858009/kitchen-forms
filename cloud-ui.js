@@ -31,7 +31,7 @@
     if (j.s >= 200 && j.s < 300) return;
     const msg = (j.b && j.b.message) || '';
     if (j.s !== 409 && !/同步密碼錯誤$|帳號已被刪除/.test(msg)) throw new Error(msg || '雲端錯誤');
-    const tok = (() => { try { return localStorage.getItem('bitan_cloud_token'); } catch (e) { return null; } })();
+    const tok = (() => { try { return localStorage.getItem('kitchenforms_energy_token') || localStorage.getItem('bitan_cloud_token'); } catch (e) { return null; } })();
     const first = j.s === 409;
     const need = '請先按下面的「打開 →」，用抄表的「管理員」帳號登入一次，再回來按「儲存」';
     if (!tok) throw new Error(first ? '抄表還沒有設定同步密碼。第一次設定：' + need : msg + '（要改成新的同步密碼：' + need + '）');
