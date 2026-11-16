@@ -12,8 +12,8 @@
 
 const SH_PEOPLE = '人員權限';
 const SH_DEV = '登入裝置';
-const MODS = ['fridge', 'prep', 'dish', 'meal'];
-const HEAD = ['姓名', '角色', '冰箱溫度', '備料交接', '菜品銷售', '員工餐', '停用', 'PIN雜湊', '更新時間'];
+const MODS = ['fridge', 'prep', 'dish', 'meal', 'sop'];
+const HEAD = ['姓名', '角色', '冰箱溫度', '備料交接', '菜品銷售', '員工餐', '廚房SOP', '停用', 'PIN雜湊', '更新時間'];
 const DEV_HEAD = ['Token', '姓名', '登入時間', '裝置', '最後使用'];
 const SH_PREP = '備料資料';
 const PREP_HEAD = ['鍵', '值', '版本', '更新者', '更新時間'];
@@ -208,7 +208,9 @@ function people_() {
 }
 function writePeople_(ps) {
   const sh = sheet_(SH_PEOPLE, HEAD), n = Math.max(0, sh.getLastRow() - 1);
-  if (n) sh.getRange(2, 1, n, HEAD.length).clearContent();
+  const w = Math.max(HEAD.length, sh.getLastColumn());
+  if (n) sh.getRange(2, 1, n, w).clearContent();
+  sh.getRange(1, 1, 1, HEAD.length).setValues([HEAD]); // 欄位有增加時，標題列一起更新
   if (!ps.length) return;
   sh.getRange(2, 1, ps.length, HEAD.length).setValues(ps.map((p) => [p.name, ROLE_N[p.role], ...MODS.map((m) => (p.role === 'admin' || p.perms[m] ? '是' : '')), p.off ? '是' : '', p.h, p.at]));
 }

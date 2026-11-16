@@ -11,7 +11,7 @@
   if (LOCAL) { try { const o = localStorage.getItem('kitchenforms-auth-url'); if (o != null) url = o; } catch (e) { /* 測試用 */ } }
   const DESK = new URLSearchParams(location.search).has('desktop');
   const LS = 'kitchenforms-auth';
-  const MODS = { fridge: '冰箱溫度記錄表', prep: '備料交接日誌', dish: '菜品銷售紀錄', meal: '員工餐金額總計' };
+  const MODS = { fridge: '冰箱溫度記錄表', prep: '備料交接日誌', dish: '菜品銷售紀錄', meal: '員工餐金額總計', sop: '廚房SOP食譜' };
 
   const get = () => { try { return JSON.parse(localStorage.getItem(LS)) || null; } catch (e) { return null; } };
   const set = (s) => { try { localStorage.setItem(LS, JSON.stringify(s)); } catch (e) { /* 空間不足 */ } };

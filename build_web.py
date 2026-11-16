@@ -1,4 +1,4 @@
-"""組裝網站：python build_web.py → site\\（首頁 + fridge\\ + dish\\ + meal\\）
+"""組裝網站：python build_web.py → site\\（首頁 + fridge\\ + dish\\ + meal\\ + prep\\ + sop\\）
 
 冰箱、菜品、員工餐的網頁版直接從原本的專案資料夾複製（之後在原專案修改，重新執行這支即可同步），
 只在它們的 index.html 加上「首頁」按鈕（kitchen-nav.js）。
@@ -14,9 +14,10 @@ MODULES = {
     "dish": VSCODE / "菜品銷售紀錄系統" / "web",
     "meal": VSCODE / "員工餐金額總計" / "web",
     "prep": ROOT / "prep",
+    "sop": VSCODE / "廚房SOP食譜及倍數計算系統" / "web",
 }
 # auth.js：人員權限（沒有權限的人由 kitchen-nav.js 送回首頁）
-NAV_TAG = '<script src="../auth.js?v=3"></script>\n<script src="../kitchen-nav.js?v=7"></script>'
+NAV_TAG = '<script src="../auth.js?v=4"></script>\n<script src="../kitchen-nav.js?v=8"></script>'
 
 
 def build(out: Path = ROOT / "site") -> Path:

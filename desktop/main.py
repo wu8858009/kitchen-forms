@@ -41,12 +41,15 @@ MODULES = {
     "fridge": (_APPDATA / "FridgeTemp", "冰箱溫度記錄表", "FridgeTemp_SingleInstance"),
     "dish": (_APPDATA / "DishSales", "菜品銷售紀錄", "DishSales_SingleInstance"),
     "prep": (_APPDATA / "KitchenPrep", "備料交接日誌", None),  # 只在本系統裡，沒有單獨程式
+    "sop": (_APPDATA / "KitchenSOP", "廚房SOP", "KitchenSOP_SingleInstance"),  # 和原本的廚房SOP程式同一份資料
 }
 FILE_TYPES = {
     ".xlsx": "Excel 活頁簿 (*.xlsx)",
     ".json": "JSON 備份 (*.json)",
     ".csv": "CSV 檔 (*.csv)",
     ".pdf": "PDF 檔 (*.pdf)",
+    ".png": "PNG 圖片 (*.png)",
+    ".jpg": "JPG 圖片 (*.jpg;*.jpeg)",
 }
 MEAL_CANDIDATES = [
     EXE_DIR / MEAL_EXE_NAME,
@@ -91,6 +94,74 @@ def _meal_exe():
     except OSError:
         pass
     return None
+
+
+# ---------------------------------------------------------------- 輸入法切換
+# WebView2 的輸入框在另一個行程，不能直接用 ImmGetContext；改送 WM_IME_CONTROL 給焦點視窗的預設 IME 視窗，
+# 微軟注音等新版輸入法也吃這個訊息。
+_WM_IME_CONTROL = 0x0283
+_IMC_GETCONVERSIONMODE, _IMC_SETCONVERSIONMODE, _IMC_GETOPENSTATUS, _IMC_SETOPENSTATUS = 0x1, 0x2, 0x5, 0x6
+_IME_CMODE_NATIVE = 0x1
+_WM_INPUTLANGCHANGEREQUEST = 0x0050
+_ZH_LANGS = (0x0404, 0x0C04, 0x1404, 0x0804, 0x1004)  # 繁中台灣優先，其次香港、澳門、簡中
+
+
+class _GUITHREADINFO(ctypes.Structure):
+    _fields_ = [("cbSize", ctypes.c_uint32), ("flags", ctypes.c_uint32), ("hwndActive", ctypes.c_void_p),
+                ("hwndFocus", ctypes.c_void_p), ("hwndCapture", ctypes.c_void_p), ("hwndMenuOwner", ctypes.c_void_p),
+                ("hwndMoveSize", ctypes.c_void_p), ("hwndCaret", ctypes.c_void_p), ("rcCaret", ctypes.c_long * 4)]
+
+
+def _focus_hwnd():
+    u = ctypes.windll.user32
+    u.GetForegroundWindow.restype = ctypes.c_void_p
+    fg = u.GetForegroundWindow()
+    if not fg:
+        return None, 0
+    tid = u.GetWindowThreadProcessId(ctypes.c_void_p(fg), None)
+    gti = _GUITHREADINFO(cbSize=ctypes.sizeof(_GUITHREADINFO))
+    if u.GetGUIThreadInfo(tid, ctypes.byref(gti)) and gti.hwndFocus:
+        return gti.hwndFocus, tid
+    return fg, tid
+
+
+def _ime_send(hwnd, cmd, val=0):
+    u, imm = ctypes.windll.user32, ctypes.windll.imm32
+    imm.ImmGetDefaultIMEWnd.restype = ctypes.c_void_p
+    ime = imm.ImmGetDefaultIMEWnd(ctypes.c_void_p(hwnd))
+    if not ime:
+        return None
+    res = ctypes.c_size_t(0)
+    ok = u.SendMessageTimeoutW(ctypes.c_void_p(ime), _WM_IME_CONTROL, ctypes.c_size_t(cmd), ctypes.c_ssize_t(val), 0x2, 300, ctypes.byref(res))
+    return res.value if ok else None
+
+
+def _set_ime(chinese):
+    try:
+        hwnd, tid = _focus_hwnd()
+        if not hwnd:
+            return False
+        u = ctypes.windll.user32
+        if chinese:
+            # 目前不是中文鍵盤時，切到已安裝的中文輸入法
+            u.GetKeyboardLayout.restype = ctypes.c_void_p
+            cur = (u.GetKeyboardLayout(tid) or 0) & 0xFFFF
+            if cur not in _ZH_LANGS:
+                n = u.GetKeyboardLayoutList(0, None)
+                arr = (ctypes.c_void_p * n)()
+                u.GetKeyboardLayoutList(n, arr)
+                hkls = [h for h in arr if h]
+                zh = next((h for lang in _ZH_LANGS for h in hkls if h & 0xFFFF == lang), None)
+                if zh:
+                    u.PostMessageW(ctypes.c_void_p(hwnd), _WM_INPUTLANGCHANGEREQUEST, 0, ctypes.c_void_p(zh))
+                    time.sleep(0.15)
+        _ime_send(hwnd, _IMC_SETOPENSTATUS, 1)
+        mode = _ime_send(hwnd, _IMC_GETCONVERSIONMODE) or 0
+        mode = (mode | _IME_CMODE_NATIVE) if chinese else (mode & ~_IME_CMODE_NATIVE)
+        _ime_send(hwnd, _IMC_SETCONVERSIONMODE, mode)
+        return _ime_send(hwnd, _IMC_GETCONVERSIONMODE)
+    except Exception:  # noqa: BLE001 - 切換失敗不影響輸入
+        return False
 
 
 def _daily_backup(folder, text):
@@ -143,14 +214,28 @@ class Api:
         return str(_data_file(self._mod()))
 
     def open_url(self, url):
-        """用預設瀏覽器開啟 Google 試算表（只允許 Google 網址）"""
-        if not str(url).startswith("https://docs.google.com/"):
+        """用預設瀏覽器開啟 Google 試算表；SOP 的標籤列印交給瀏覽器（WebView2 不能連藍牙／USB 印表機）"""
+        if not str(url).startswith(("https://docs.google.com/", "https://wu8858009.github.io/kitchen-sop/")):
             return False
         return webbrowser.open(url)
+
+    def export_image(self, data_url, filename):
+        """SOP：把標籤或照片存成圖片檔（PNG 或 JPG）"""
+        jpg = data_url.startswith("data:image/jpeg")
+        name = Path(filename).with_suffix(".jpg" if jpg else ".png").name
+        return self.export_file(data_url.split(",", 1)[1], name)
+
+    def set_ime(self, mode):
+        """SOP：輸入框取得焦點時切換輸入法：'zh' 中文、'en' 英數"""
+        return _set_ime(mode == "zh")
 
     def export_file(self, b64, filename):
         """另存新檔（Excel、PDF 或 JSON 備份）；回傳儲存路徑，取消時回傳空字串"""
         ext = Path(filename).suffix.lower()
+        try:
+            text_mode = self._mod() == "sop" and ext == ".json"  # SOP 的備份傳的是文字，不是 base64
+        except RuntimeError:
+            text_mode = False
         docs = Path.home() / "Documents"
         out = os.environ.get("KITCHEN_EXPORT_DIR")  # 自我測試時不跳對話框
         if out:
@@ -167,7 +252,10 @@ class Api:
         path = Path(res[0] if isinstance(res, (list, tuple)) else res)
         if ext and path.suffix.lower() != ext:
             path = path.with_suffix(ext)
-        path.write_bytes(base64.b64decode(b64))
+        if text_mode:
+            path.write_text(b64, encoding="utf-8")
+        else:
+            path.write_bytes(base64.b64decode(b64))
         return str(path)
 
     # ---- 首頁
@@ -332,15 +420,27 @@ def _selftest(out_path):
         result["prep_summary"] = js("JSON.stringify(window.__kitchen.summary.prep)")
         result["meal_summary"] = js("JSON.stringify(window.__kitchen.summary.meal)")
         result["open_meal"] = js("window.pywebview.api.open_meal()")
+        # 廚房 SOP：開啟、讀到範例食譜、存檔到 %APPDATA%\KitchenSOP、回首頁
+        js("document.querySelector('.card.sop .btn').click()")
+        result["sop_recipes"] = wait("window.__kitchen && window.__kitchen.db && window.__kitchen.db.recipes ? window.__kitchen.db.recipes.length : 0")
+        result["sop_home_btn"] = bool(js("!!document.querySelector('.kn-home')"))
+        js("window.__kitchen.persist(true)")
+        time.sleep(1.0)
+        sf = _data_file("sop")
+        result["sop_saved"] = sf.exists() and len(json.loads(sf.read_text(encoding="utf-8")).get("recipes", [])) == result["sop_recipes"]
+        js("document.querySelector('.kn-home').click()")
+        result["back_home_4"] = wait("window.__kitchen && window.__kitchen.summary && window.__kitchen.summary.sop ? 1 : 0")
+        result["sop_summary"] = js("JSON.stringify(window.__kitchen.summary.sop)")
         time.sleep(0.3)
         result["kpis"] = js("[...document.querySelectorAll('.kpi')].map(e => e.innerText.replace(/\\n/g, ' '))")
         result["window"] = [_window.x, _window.y, _window.width, _window.height]
         fs = json.loads(result["fridge_summary"] or "null") or {}
         ds = json.loads(result["dish_summary"] or "null") or {}
         ps = json.loads(result.get("prep_summary") or "null") or {}
-        result["ok"] = bool(result["home_cards"] == 4 and ps.get("done", 0) >= 2 and ps.get("sign") and result["prep_pdf"] and result["prep_saved"] and result["fridge_loaded"] and result["fridge_home_btn"]
+        result["ok"] = bool(result["home_cards"] == 5 and ps.get("done", 0) >= 2 and ps.get("sign") and result["prep_pdf"] and result["prep_saved"] and result["fridge_loaded"] and result["fridge_home_btn"]
                             and result["fridge_saved_today"] and fs.get("done", 0) >= 1
-                            and result["dish_loaded"] and ds.get("t", {}).get("q", 0) >= 3)
+                            and result["dish_loaded"] and ds.get("t", {}).get("q", 0) >= 3
+                            and result["sop_recipes"] and result["sop_saved"] and result["sop_home_btn"] and result["back_home_4"])
     except Exception as e:  # noqa: BLE001
         result["error"] = repr(e)
     Path(out_path).write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")

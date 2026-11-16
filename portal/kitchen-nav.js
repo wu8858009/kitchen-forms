@@ -7,12 +7,12 @@
   let BG = false;
   try { BG = window.top !== window; } catch (e) { BG = true; }
   if (BG) {
-    const md = (location.pathname.match(/\/(fridge|prep|dish|meal)\//) || [])[1];
+    const md = (location.pathname.match(/\/(fridge|prep|dish|meal|sop)\//) || [])[1];
     if (md && window.KitchenAuth && !window.KitchenAuth.can(md)) location.replace('about:blank');
     return;
   }
   // 權限：沒有這個系統權限（或還沒登入）就回首頁
-  const mod = (location.pathname.match(/\/(fridge|prep|dish|meal)\//) || [])[1];
+  const mod = (location.pathname.match(/\/(fridge|prep|dish|meal|sop)\//) || [])[1];
   if (mod && window.KitchenAuth && !window.KitchenAuth.can(mod)) { location.replace(home); return; }
   // 開著的時候權限被取消、帳號被停用：存好資料再回首頁
   if (mod && window.KitchenAuth && window.KitchenAuth.on) {
@@ -28,6 +28,8 @@
   st.textContent = `.kn-home{display:inline-flex;align-items:center;gap:4px;flex:none;margin-right:8px;padding:5px 10px;border-radius:8px;
     background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.3);color:#fff;text-decoration:none;font-size:14px;font-weight:700;white-space:nowrap}
     .kn-home:hover{background:rgba(255,255,255,.26)} .kn-home span{font-size:17px;line-height:1}
+    .kn-home.light{background:#fdf0e1;border-color:#f3d9bd;color:#b45309} .kn-home.light:hover{background:#fbe3c8}
+    .kn-home.light{background:#fdf0e1;border-color:#f3d9bd;color:#b45309} .kn-home.light:hover{background:#fbe3c8}
     @media print{.kn-home{display:none!important}}`;
   document.head.appendChild(st);
   const a = document.createElement('a');
@@ -37,10 +39,16 @@
     e.preventDefault();
     const m = window.__fridge || window.__dish || window.__meal || window.__prep;
     try { if (m && m.flush) await Promise.race([m.flush(), new Promise((r) => setTimeout(r, 3000))]); } catch (err) { /* 照樣回首頁 */ }
+    if (mod === 'sop') { window.dispatchEvent(new Event('pagehide')); await new Promise((r) => setTimeout(r, 400)); } // SOP 收到 pagehide 會把還沒存的資料存好
     location.href = home;
   });
-  const top = document.querySelector('header.top');
-  if (top) top.insertBefore(a, top.firstChild);
+  const top = document.querySelector('header.top, header.topbar');
+  if (top) {
+    top.insertBefore(a, top.firstChild);
+    // 淺色標題列（SOP）：按鈕改用深色字
+    const bg = getComputedStyle(top).backgroundColor.match(/\d+/g) || [0, 0, 0];
+    if ((+bg[0] * 299 + +bg[1] * 587 + +bg[2] * 114) / 1000 > 160) a.classList.add('light');
+  }
 
   // 首頁「雲端同步」統一設定：冰箱、菜品打開時，用它們自己的連線流程套用首頁存的網址和密碼
   function kToast(msg) {
