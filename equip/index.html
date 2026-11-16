@@ -25,7 +25,7 @@
     };
     try { var t = localStorage.getItem('sg_theme_boot'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {}
   </script>
-<script>(function(){var m=(location.pathname.match(/\/(fridge|prep|dish|meal|sop|equip|energy)\//)||[])[1]||"";var d=document.documentElement;d.classList.add("kf-dark","kf-"+m);if(m==="equip"||m==="fridge"||m==="dish"){d.dataset.theme="dark";new MutationObserver(function(){if(d.dataset.theme!=="dark")d.dataset.theme="dark";}).observe(d,{attributes:true,attributeFilter:["data-theme"]});}if(m==="energy"){var e=function(){var b=document.body;if(!b)return;b.classList.add("dark-mode");new MutationObserver(function(){if(!b.classList.contains("dark-mode"))b.classList.add("dark-mode");}).observe(b,{attributes:true,attributeFilter:["class"]});};if(document.body)e();else document.addEventListener("DOMContentLoaded",e);}})();</script>
+<script>(function(){var m=(location.pathname.match(/\/(fridge|prep|dish|meal|sop|equip|energy)\//)||[])[1]||"";var d=document.documentElement;d.classList.add("kf-dark","kf-"+m);if(m==="equip"||m==="fridge"||m==="dish"){d.dataset.theme="dark";new MutationObserver(function(){if(d.dataset.theme!=="dark")d.dataset.theme="dark";}).observe(d,{attributes:true,attributeFilter:["data-theme"]});}if(m==="energy"){var e=function(){var b=document.body;if(!b)return;b.classList.add("dark-mode");new MutationObserver(function(){if(!b.classList.contains("dark-mode"))b.classList.add("dark-mode");}).observe(b,{attributes:true,attributeFilter:["class"]});};if(document.body)e();else document.addEventListener("DOMContentLoaded",e);var of=window.fetch;window.fetch=function(u,o){var p=of.apply(this,arguments);try{if(String(u).indexOf("script.google.com")>=0&&o&&typeof o.body==="string"&&o.body.indexOf("\"p\":")>=0){p.then(function(r){r.clone().json().then(function(j){if(j&&j.s===401){window.__kfE401=1;window.dispatchEvent(new Event("kf-energy-401"));}})["catch"](function(){});})["catch"](function(){});}}catch(x){}return p;};}})();</script>
 <link rel="stylesheet" href="../kitchen-theme.css?v=4">
 </head>
 <body>
@@ -51,7 +51,7 @@
   <script src="js/notify.js?v=1.6.1"></script>
   <script src="js/purchase.js?v=1.6.1"></script>
   <script src="js/app.js?v=1.6.1"></script>
-<script src="../auth.js?v=9"></script>
-<script src="../kitchen-nav.js?v=14"></script>
+<script src="../auth.js?v=10"></script>
+<script src="../kitchen-nav.js?v=15"></script>
 </body>
 </html>
