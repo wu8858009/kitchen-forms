@@ -76,3 +76,5 @@ button { font: inherit; cursor: pointer; }
   .cards { gap: 12px; }
   .kpi .v { font-size: 20px; }
 }
+
+.bg-sync { position: fixed; left: -20px; top: -20px; width: 10px; height: 10px; border: 0; opacity: 0; pointer-events: none; }

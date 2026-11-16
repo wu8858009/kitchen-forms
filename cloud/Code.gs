@@ -39,6 +39,8 @@ function doPost(e) {
       if (a === 'save') return out_(withAdmin_(q, (me) => save_(me, q.p || {}, q.token)));
       if (a === 'del') return out_(withAdmin_(q, (me) => del_(me, String(q.name || ''))));
       if (a === 'prep_sync') return out_(withMe_(q, (me) => prepSync_(me, q)));
+      // 只問目前版本（很快），有變才做完整同步
+      if (a === 'prep_rev') return out_(withMe_(q, (me) => (me.role === 'admin' || me.perms.prep ? { ok: true, rev: Number(PropertiesService.getScriptProperties().getProperty('PREP_REV') || 0) } : { ok: false, code: 'perm', error: '你沒有備料交接日誌的權限' })));
       return out_({ ok: false, error: '不認得的動作：' + a });
     } finally { lock.releaseLock(); }
   } catch (err) { return out_({ ok: false, error: String(err && err.message || err) }); }
