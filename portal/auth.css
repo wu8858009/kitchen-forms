@@ -1,6 +1,6 @@
 /* 登入畫面、帳號選單、權限管理 */
 .who { display: none; }
-.who.on { display: inline-flex; align-items: center; gap: 5px; max-width: 9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.who.on { display: inline-flex; }
 .top-r { display: flex; gap: 8px; align-items: center; flex: none; }
 
 .auth-screen { position: fixed; inset: 0; z-index: 70; overflow: auto; display: flex; justify-content: center; align-items: flex-start;
@@ -98,3 +98,33 @@
 .cl-msg { margin: 8px 0 0; font-size: 13px; color: #166534; background: #f0fdf4; border-radius: 8px; padding: 7px 10px; }
 .cl-msg.bad { color: var(--bad); background: #fef2f2; }
 .cl-all { border-left-color: #f59e0b; }
+
+/* 登入畫面：依螢幕大小 */
+@media (max-width: 360px) {
+  .auth-pad { gap: 9px; }
+  .auth-pad button { height: 56px; font-size: 23px; }
+  .auth-name { padding: 8px 13px; font-size: 15px; }
+}
+@media (max-height: 640px) {
+  .auth-screen { padding-top: calc(env(safe-area-inset-top) + 14px); }
+  .auth-logo { width: 48px; height: 48px; }
+  .auth-box h1 { font-size: 19px; margin-top: 8px; }
+  .auth-pad button { height: 54px; }
+}
+/* 手機橫放：名字在左、數字鍵在右 */
+@media (max-height: 500px) and (orientation: landscape) {
+  .auth-box { width: min(720px, 100%); }
+  .auth-logo, .auth-box h1 { display: none; }
+  .auth-body { display: grid; grid-template-columns: 1fr 260px; gap: 6px 22px; align-items: start; text-align: left; }
+  .auth-body > .auth-sub, .auth-body > .auth-names, .auth-body > .auth-err { grid-column: 1; }
+  .auth-body > .auth-names { justify-content: flex-start; }
+  .auth-body > .auth-dots { grid-column: 2; grid-row: 1; justify-content: center; margin: 4px 0; }
+  .auth-body > .auth-pad { grid-column: 2; grid-row: 2 / span 3; gap: 7px; }
+  .auth-pad button { height: 44px; font-size: 20px; border-radius: 12px; }
+  .auth-body > .auth-form, .auth-body > .auth-msg, .auth-body > .auth-btn { grid-column: 1 / -1; }
+}
+/* 大螢幕：管理畫面置中、兩欄 */
+@media (min-width: 1100px) {
+  .adm-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .adm-b > * { max-width: 1000px; }
+}
