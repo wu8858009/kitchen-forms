@@ -1,7 +1,7 @@
 /* 備料交接日誌 — 依紙本「碧水堂廚房交接表」：時程、站區分配、交接事項、預估銷售量（平日／假日）、早上／下午／晚上交接、值班主管簽名，可列印 A4 交接表 */
 (() => {
   'use strict';
-  const VERSION = '2.1.0';
+  const VERSION = '2.2.0';
   const DESK = new URLSearchParams(location.search).has('desktop');
   const IS_MOBILE = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 
@@ -129,12 +129,13 @@
   let db;
   let saveTimer;
   function save() { setStatus('儲存中…'); clearTimeout(saveTimer); saveTimer = setTimeout(flush, 400); }
-  async function flush() {
+  async function flush(fromSync) {
     clearTimeout(saveTimer); saveTimer = null;
     const text = JSON.stringify(db);
     try {
       if (DESK) { const r = await (await api()).save(text); if (r !== true) throw new Error(r); } else await IDB.set('db', text);
       setStatus('已儲存');
+      if (fromSync !== true) schedSync(1500);
     } catch (e) {
       setStatus('儲存失敗', true);
       alert('儲存失敗：' + (e && e.message || e));
@@ -142,6 +143,119 @@
   }
   document.addEventListener('visibilitychange', () => { if (document.hidden && saveTimer) flush(); });
   window.addEventListener('pagehide', () => { if (saveTimer) flush(); });
+
+  // ------------------------------------------------------------------ 雲端同步（所有裝置共用一份；用首頁登入的帳號，存在「廚房專用表格系統 人員權限」試算表的「備料資料」分頁）
+  // 資料攤平成「鍵 → JSON」：每個設定、站區、品項、每天每一格各一個鍵，只上傳有改的鍵、只下載別人改過的鍵。
+  const AUTH = () => window.KitchenAuth;
+  const token = () => { const A = AUTH(), s = A && A.get(); return s && s.token && AUTH().url ? s.token : ''; };
+  function flat(d) {
+    const o = {};
+    for (const k of Object.keys(d)) {
+      if (k === 'stations' || k === 'items') d[k].forEach((x) => { o[(k === 'stations' ? 'st:' : 'it:') + x.id] = JSON.stringify(x); });
+      else if (k === 'logs') {
+        for (const [ymd, L] of Object.entries(d.logs || {})) {
+          for (const [f, v] of Object.entries(L || {})) {
+            if (f === 'at') continue;
+            if (v && typeof v === 'object' && !Array.isArray(v)) for (const [s, x] of Object.entries(v)) o[`lg:${ymd}:${f}:${s}`] = JSON.stringify(x);
+            else o[`lg:${ymd}:${f}`] = JSON.stringify(v);
+          }
+        }
+      } else if (k !== '_sync') o['cf:' + k] = JSON.stringify(d[k]);
+    }
+    return o;
+  }
+  function unflat(o) {
+    const d = { stations: [], items: [], logs: {} };
+    for (const [k, s] of Object.entries(o)) {
+      let v; try { v = JSON.parse(s); } catch (e) { continue; }
+      const p = k.split(':');
+      if (p[0] === 'cf') d[p.slice(1).join(':')] = v;
+      else if (p[0] === 'st') d.stations.push(v);
+      else if (p[0] === 'it') d.items.push(v);
+      else if (p[0] === 'lg' && p.length >= 3) {
+        const L = d.logs[p[1]] || (d.logs[p[1]] = { q: {} });
+        if (p.length === 3) L[p[2]] = v; else (L[p[2]] && typeof L[p[2]] === 'object' ? L[p[2]] : (L[p[2]] = {}))[p.slice(3).join(':')] = v;
+      }
+    }
+    return d;
+  }
+  const sync = { busy: false, again: false, timer: 0, last: 0, err: '', pendingRender: false };
+  function schedSync(ms) { if (!token()) return; clearTimeout(sync.timer); sync.timer = setTimeout(() => syncNow(), ms); }
+  function syncLabel() {
+    if (!token()) return '';
+    if (sync.err) return '☁️ ' + sync.err;
+    if (!sync.last) return '☁️ 同步中…';
+    const t = new Date(sync.last);
+    return `☁️ 已同步 ${pad(t.getHours())}:${pad(t.getMinutes())}`;
+  }
+  async function syncNow(manual) {
+    const tk = token();
+    if (!tk) return false;
+    if (sync.busy) { sync.again = true; return false; }
+    sync.busy = true;
+    try {
+      const A = AUTH();
+      let adopted = false;
+      // 這台裝置第一次同步：雲端已經有資料就以雲端的品項、設定為準，只把這台的每日記錄補上去
+      if (!db._sync) {
+        const r = await A.call('prep_sync', { token: tk, since: 0, changes: {} });
+        if (!r.ok) throw r;
+        const R = {};
+        for (const [k, v] of Object.entries(r.rows)) if (v != null) R[k] = v;
+        if (Object.keys(R).length) {
+          const local = flat(db), merged = { ...R };
+          for (const [k, v] of Object.entries(local)) if (k.startsWith('lg:') && !(k in R)) merged[k] = v;
+          const nd = unflat(merged); nd._sync = { rev: r.rev, base: R };
+          db = nd; adopted = true;
+        } else db._sync = { rev: r.rev, base: {} };
+      }
+      const L = flat(db), B = db._sync.base || {}, ch = {};
+      for (const k of Object.keys(L)) if (L[k] !== B[k]) ch[k] = L[k];
+      for (const k of Object.keys(B)) if (!(k in L)) ch[k] = null;
+      const r = await A.call('prep_sync', { token: tk, since: db._sync.rev || 0, changes: ch });
+      if (!r.ok) throw r;
+      let changed = false;
+      const S = { ...L };
+      for (const [k, v] of Object.entries(r.rows)) {
+        if (k in ch) continue; // 自己剛上傳的
+        if (v == null) { if (k in S) { delete S[k]; changed = true; } } else if (S[k] !== v) { S[k] = v; changed = true; }
+      }
+      // 等雲端回應的這段時間裡，這台又改了的地方要保留（下一次同步再上傳）
+      const now2 = flat(db), merged = { ...S };
+      let dirty = false;
+      for (const k of new Set([...Object.keys(now2), ...Object.keys(L)])) {
+        if (now2[k] !== L[k]) { dirty = true; if (k in now2) merged[k] = now2[k]; else delete merged[k]; }
+      }
+      const nd = changed || dirty ? unflat(merged) : db;
+      nd._sync = { rev: r.rev, base: S };
+      db = nd;
+      sync.last = Date.now(); sync.err = '';
+      await flush(true);
+      if (changed || adopted) rerender();
+      if (dirty) schedSync(1500);
+      if (manual) toast(changed ? '已同步，下載了其他裝置的更新' : '已同步');
+      return true;
+    } catch (e) {
+      sync.err = e && e.code === 'auth' ? '請到首頁重新登入' : e && e.code === 'perm' ? '沒有權限' : e && (e.error || e.message) ? '同步失敗' : '同步失敗';
+      if (manual) toast((e && (e.error || e.message)) || '同步失敗', 4000);
+      return false;
+    } finally {
+      sync.busy = false;
+      setStatus(syncLabel() || '已儲存', !!sync.err);
+      const box = $('#syncst'); if (box) box.textContent = syncLabel();
+      if (sync.again) { sync.again = false; schedSync(500); }
+    }
+  }
+  // 別的裝置改了資料：重畫畫面（正在輸入時先不重畫，離開輸入框再畫，免得打字被打斷）
+  function rerender() {
+    const a = document.activeElement;
+    if (a && a.closest && a.closest('#app') && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) { sync.pendingRender = true; return; }
+    sync.pendingRender = false;
+    route();
+  }
+  document.addEventListener('focusout', () => { if (sync.pendingRender) setTimeout(() => { const a = document.activeElement; if (!(a && a.closest && a.closest('#app') && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))) rerender(); }, 300); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) schedSync(300); });
+  setInterval(() => { if (!document.hidden) syncNow(); }, 30 * 1000);
 
   // ------------------------------------------------------------------ 資料
   const stations = () => db.stations.filter((s) => !s.deleted).sort((a, b) => a.ord - b.ord);
@@ -641,21 +755,51 @@
   }
 
   // ------------------------------------------------------------------ 設定
+  function syncBox() {
+    const s = AUTH().get();
+    let body;
+    if (token()) {
+      body = `<p class="muted" style="margin-top:0">已登入：<b style="color:var(--ink)">${esc(s.me && s.me.name)}</b>。資料會自動同步，所有登入的手機、平板、電腦都看到同一份。</p>
+        <div class="row" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="btn pri" data-act="syncnow">☁️ 立即同步</button>
+        ${DESK ? '<button class="btn" data-act="synclogout">登出</button>' : ''}<span class="muted" id="syncst">${esc(syncLabel())}</span></div>`;
+    } else if (DESK) {
+      body = `<p class="muted" style="margin-top:0">用首頁「人員與權限」裡的名字和 PIN 登入，這台電腦就會跟手機同步備料資料。</p>
+        <form id="synclogin" class="grid2" style="grid-template-columns:auto minmax(0,1fr)"><label>名字</label><input name="n" autocomplete="off"><label>PIN</label><input name="p" type="password" inputmode="numeric" maxlength="8">
+        <span></span><button class="btn pri">登入並同步</button></form>`;
+    } else {
+      body = '<p class="muted" style="margin:0">要跟其他裝置同步，請先到<a href="../index.html">首頁</a>登入。</p>';
+    }
+    return `<div class="box" style="margin-top:14px"><h3>☁️ 雲端同步</h3>${body}</div>`;
+  }
   function viewSettings(el) {
     const n = Object.keys(db.logs).filter((k) => Object.keys(db.logs[k].q || {}).length).length;
     el.innerHTML = `<div class="wrap" style="max-width:640px">
       <div class="box"><h3>表單資訊</h3>
         <div class="field"><label>表單標題</label><input id="ttl" value="${esc(db.title || '')}"></div></div>
+      ${AUTH() && AUTH().url ? syncBox() : ''}
       <div class="box" style="margin-top:14px"><h3>資料備份</h3>
         <p class="muted">共 ${n} 天有備料記錄、${db.items.filter((i) => !i.deleted).length} 個品項。
-        ${DESK ? '<br>本機資料檔：<code id="dpath">…</code>（每天自動保留一份備份）' : '<br>資料存在這個瀏覽器裡，換手機或清除瀏覽資料前請先匯出備份。'}</p>
+        ${DESK ? '<br>本機資料檔：<code id="dpath">…</code>（每天自動保留一份備份）' : token() ? '<br>資料存在這台裝置，也會自動同步到雲端。' : '<br>資料存在這個瀏覽器裡，換手機或清除瀏覽資料前請先匯出備份。'}</p>
         <div class="row" style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn pri" data-act="export">匯出備份（JSON）</button>
           <button class="btn" data-act="import">匯入備份…</button><button class="btn danger" data-act="reset">還原成紙本預設</button></div></div>
       <p class="muted" style="text-align:center">備料交接日誌 v${VERSION}${DESK ? '（桌面版）' : ''}・快捷鍵 Alt+1～4 切換頁面</p></div>`;
     if (DESK) api().then((x) => x.data_path()).then((p) => { const e = $('#dpath'); if (e) e.textContent = p; });
     $('#ttl', el).addEventListener('input', (e) => { db.title = e.target.value; db.titleAt = now(); save(); });
+    const sf = $('#synclogin', el);
+    if (sf) sf.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const b = $('button', sf); b.disabled = true;
+      try {
+        const r = await AUTH().call('login', { name: sf.n.value.trim(), pin: sf.p.value, dev: '桌面版' });
+        if (!r.ok) { toast(r.error, 4000); b.disabled = false; return; }
+        AUTH().set({ token: r.token, me: r.me, at: Date.now(), last: r.me.name });
+        toast(`已登入：${r.me.name}`); route(); await syncNow(true); route();
+      } catch (x) { toast(x.message, 4000); b.disabled = false; }
+    });
     el.addEventListener('click', (e) => {
       const a = e.target.dataset.act;
+      if (a === 'syncnow') syncNow(true).then(() => route());
+      if (a === 'synclogout' && confirm('登出？這台電腦會停止同步（資料仍保留在這台電腦）')) { const t = token(); AUTH().call('logout', { token: t }).catch(() => {}); AUTH().clear(); route(); }
       if (a === 'export') saveFile(JSON.stringify(db, null, 1), `備料交接日誌_備份_${today().replace(/-/g, '')}.json`, 'application/json');
       if (a === 'import') {
         const f = document.createElement('input'); f.type = 'file'; f.accept = '.json,application/json';
@@ -664,7 +808,7 @@
             const d = JSON.parse(await f.files[0].text());
             if (!Array.isArray(d.items) || !d.logs) throw new Error('不是備料交接日誌的備份檔');
             if (!confirm('用備份檔取代目前全部資料？')) return;
-            db = d; migrate(); await flush(); toast('已匯入備份'); route();
+            d._sync = db._sync; db = d; migrate(); await flush(); toast('已匯入備份'); route();
           } catch (err) { alert('匯入失敗：' + (err.message || err)); }
         };
         f.click();
@@ -686,6 +830,8 @@
     if (e.altKey && ['1', '2', '3', '4'].includes(e.key)) { e.preventDefault(); location.hash = '#/' + ['day', 'sheet', 'items', 'settings'][+e.key - 1]; }
   });
   async function init() {
+    // 等頁面後面的 auth.js（登入資料）也載入完
+    if (document.readyState === 'loading') await new Promise((r) => document.addEventListener('DOMContentLoaded', r, { once: true }));
     let raw = null;
     try { raw = await loadRaw(); } catch (e) { /* 第一次 */ }
     try { db = raw ? JSON.parse(raw) : null; } catch (e) { db = null; }
@@ -695,7 +841,8 @@
     $('#shop').textContent = '備料交接日誌';
     document.title = db.title || '備料交接日誌';
     route();
+    if (token()) { setStatus(syncLabel()); syncNow(); }
   }
-  window.__prep = { get db() { return db; }, flush, dayStats, sheetPages, buildPdf, VERSION };
+  window.__prep = { get db() { return db; }, flush, dayStats, sheetPages, buildPdf, syncNow, flat, unflat, VERSION };
   init();
 })();

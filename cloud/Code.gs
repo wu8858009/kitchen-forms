@@ -5,6 +5,9 @@
  * 分頁「登入裝置」：每台登入的裝置一列（Token）。刪掉某列＝那台裝置被登出。
  * PIN 碼只存雜湊（加上只有這個指令碼知道的 SALT），試算表看不到 PIN。
  * 第一位管理者由第一次打開網頁的人建立（setup），之後只有管理者能新增、修改人員。
+ *
+ * 分頁「備料資料」：備料交接日誌的資料，所有裝置共用（prep_sync）。每個設定、品項、每天每一格各一列，
+ * 「版本」越大越新；裝置只下載自己上次同步後有變動的列。值是 JSON，請不要手動修改。
  */
 
 const SH_PEOPLE = '人員權限';
@@ -12,6 +15,8 @@ const SH_DEV = '登入裝置';
 const MODS = ['fridge', 'prep', 'dish', 'meal'];
 const HEAD = ['姓名', '角色', '冰箱溫度', '備料交接', '菜品銷售', '員工餐', '停用', 'PIN雜湊', '更新時間'];
 const DEV_HEAD = ['Token', '姓名', '登入時間', '裝置', '最後使用'];
+const SH_PREP = '備料資料';
+const PREP_HEAD = ['鍵', '值', '版本', '更新者', '更新時間'];
 const ROLE_N = { admin: '管理者', staff: '員工' };
 const MAX_FAIL = 5, LOCK_MS = 5 * 60 * 1000;
 
@@ -33,6 +38,7 @@ function doPost(e) {
       if (a === 'list') return out_(withAdmin_(q, () => ({ ok: true, people: people_().map(pub_), sheet: SpreadsheetApp.getActive().getUrl() })));
       if (a === 'save') return out_(withAdmin_(q, (me) => save_(me, q.p || {}, q.token)));
       if (a === 'del') return out_(withAdmin_(q, (me) => del_(me, String(q.name || ''))));
+      if (a === 'prep_sync') return out_(withMe_(q, (me) => prepSync_(me, q)));
       return out_({ ok: false, error: '不認得的動作：' + a });
     } finally { lock.releaseLock(); }
   } catch (err) { return out_({ ok: false, error: String(err && err.message || err) }); }
@@ -117,6 +123,35 @@ function del_(me, name) {
   writePeople_(rest);
   delTokens_((r) => r[1] === name);
   return { ok: true };
+}
+
+// ------------------------------------------------------------------ 備料交接日誌同步
+// changes：{鍵: JSON 字串，null＝刪除}；回傳版本大於 since 的所有列（含剛剛寫入的）
+function prepSync_(me, q) {
+  if (me.role !== 'admin' && !me.perms.prep) return { ok: false, code: 'perm', error: '你沒有備料交接日誌的權限' };
+  const sh = sheet_(SH_PREP, PREP_HEAD), n = sh.getLastRow() - 1;
+  const rows = n > 0 ? sh.getRange(2, 1, n, PREP_HEAD.length).getValues() : [];
+  const idx = {};
+  rows.forEach((r, i) => { idx[String(r[0])] = i; });
+  const props = PropertiesService.getScriptProperties();
+  let rev = Number(props.getProperty('PREP_REV') || 0);
+  const ch = q.changes || {}, keys = Object.keys(ch);
+  if (keys.length) {
+    rev++;
+    const now = fmt_(new Date()), add = [], upd = [];
+    keys.forEach((k) => {
+      const v = ch[k] == null ? '' : String(ch[k]);
+      const row = [k, v, rev, me.name, now];
+      if (k in idx) { rows[idx[k]] = row; upd.push(idx[k]); } else { add.push(row); rows.push(row); idx[k] = rows.length - 1; }
+    });
+    if (upd.length > 20) sh.getRange(2, 1, n, PREP_HEAD.length).setNumberFormat('@').setValues(rows.slice(0, n));
+    else upd.forEach((i) => sh.getRange(i + 2, 1, 1, PREP_HEAD.length).setNumberFormat('@').setValues([rows[i]]));
+    if (add.length) sh.getRange(n + 2, 1, add.length, PREP_HEAD.length).setNumberFormat('@').setValues(add);
+    props.setProperty('PREP_REV', String(rev));
+  }
+  const since = Number(q.since) || 0, out = {};
+  rows.forEach((r) => { if (Number(r[2]) > since) out[String(r[0])] = String(r[1]) === '' ? null : String(r[1]); });
+  return { ok: true, rev, rows: out };
 }
 
 // ------------------------------------------------------------------ 登入裝置
