@@ -15,7 +15,8 @@ MODULES = {
     "meal": VSCODE / "員工餐金額總計" / "web",
     "prep": ROOT / "prep",
 }
-NAV_TAG = '<script src="../kitchen-nav.js?v=3"></script>'
+# auth.js：人員權限（沒有權限的人由 kitchen-nav.js 送回首頁）
+NAV_TAG = '<script src="../auth.js?v=2"></script>\n<script src="../kitchen-nav.js?v=4"></script>'
 
 
 def build(out: Path = ROOT / "site") -> Path:
