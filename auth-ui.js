@@ -5,8 +5,8 @@
   const $ = (s, r = document) => r.querySelector(s);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const ROLE = { admin: '管理者', staff: '員工' };
-  const ICON = { fridge: '🌡️', prep: '📋', dish: '🍱', meal: '🍚' };
-  const SHORT = { fridge: '冰箱', prep: '備料', dish: '菜品', meal: '員工餐' };
+  const ICON = { fridge: '🌡️', prep: '📋', dish: '🍱', meal: '🍚', sop: '📖' };
+  const SHORT = { fridge: '冰箱', prep: '備料', dish: '菜品', meal: '員工餐', sop: 'SOP食譜' };
   let onChange = () => {};
   function toast(msg, ms = 2600) {
     const t = $('#toast'); t.textContent = msg; t.hidden = false;
@@ -271,7 +271,7 @@
       <form class="pp add"><div class="pp-h"><b>＋ 新增人員</b></div>
         <div class="add-g"><label>名字<input name="n" maxlength="20" autocomplete="off" placeholder="例：小明"></label>
           <label>PIN（4～8 位數字）<input name="p" type="password" inputmode="numeric" maxlength="8" autocomplete="new-password"></label></div>
-        <div class="pp-perm">${permBoxes({ perms: { fridge: true, prep: true, dish: false, meal: false } }, false)}</div>
+        <div class="pp-perm">${permBoxes({ perms: { fridge: true, prep: true, dish: false, meal: false, sop: true } }, false)}</div>
         <label class="sw adm-role"><input type="checkbox" name="admin"><span>設為管理者（可以開全部系統、管理人員）</span></label>
         <div class="pp-f"><button class="pri">新增</button></div></form>
       ${sheetUrl ? `<p class="adm-tip">也可以直接在 <a href="${esc(sheetUrl)}" target="_blank" rel="noopener">Google 試算表</a> 修改權限（填「是」或留空）。刪掉「登入裝置」分頁的某一列，那台裝置就會被登出。</p>` : ''}`;

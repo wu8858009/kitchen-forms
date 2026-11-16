@@ -1,8 +1,8 @@
 // 首頁與備料交接日誌的離線快取（冰箱、菜品、員工餐資料夾有各自的 sw.js）
 // 帶 ?v= 的檔案：先用快取（改版時版本號會變，網址不同就會抓新的）
 // 頁面與其他檔案：先抓網路拿最新版，網路 2.5 秒沒回應就先用快取，背景照樣更新
-const CACHE = 'kitchenforms-v16';
-const SHELL = ['./', 'index.html', 'portal.css?v=5', 'config.js?v=1', 'portal.js?v=13', 'auth.js?v=3', 'auth-ui.js?v=5', 'auth.css?v=4', 'cloud-ui.js?v=1', 'meal/js/core.js?v=1', 'kitchen-nav.js?v=7', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
+const CACHE = 'kitchenforms-v17';
+const SHELL = ['./', 'index.html', 'portal.css?v=6', 'config.js?v=1', 'portal.js?v=14', 'auth.js?v=4', 'auth-ui.js?v=6', 'auth.css?v=4', 'cloud-ui.js?v=2', 'meal/js/core.js?v=1', 'kitchen-nav.js?v=8', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -19,7 +19,7 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(req.url);
   if (req.method !== 'GET' || url.origin !== location.origin) return;
   // 冰箱、菜品、員工餐頁面交給它們自己的 service worker
-  if (/\/(fridge|dish|meal)\//.test(url.pathname) && !/\/meal\/js\/core\.js$/.test(url.pathname)) return;
+  if (/\/(fridge|dish|meal|sop)\//.test(url.pathname) && !/\/meal\/js\/core\.js$/.test(url.pathname)) return;
   if (url.searchParams.has('u')) return; // 檢查新版用的請求，不要存進快取
   if (url.searchParams.has('v')) {
     e.respondWith(caches.match(req).then((hit) => hit || fetch(req).then((res) => save(req, res))));

@@ -32,7 +32,7 @@ button { font: inherit; cursor: pointer; }
   background: var(--card); border-radius: 14px; box-shadow: 0 1px 3px rgba(15, 23, 42, .08), 0 6px 18px rgba(15, 23, 42, .05);
   display: flex; flex-direction: column; overflow: hidden; border-top: 5px solid var(--c);
 }
-.card.fridge { --c: var(--fridge); } .card.dish { --c: var(--dish); } .card.meal { --c: var(--meal); } .card.prep { --c: var(--prep); }
+.card.fridge { --c: var(--fridge); } .card.dish { --c: var(--dish); } .card.meal { --c: var(--meal); } .card.prep { --c: var(--prep); } .card.sop { --c: #b45309; }
 .card-h { display: flex; align-items: center; gap: 10px; padding: 14px 16px 6px; }
 .card-h .ic { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; font-size: 22px; background: color-mix(in srgb, var(--c) 12%, #fff); }
 .card-h h2 { margin: 0; font-size: 18px; }
@@ -83,14 +83,17 @@ button { font: inherit; cursor: pointer; }
 /* ---------- 依螢幕大小自動調整 ---------- */
 .top-r { flex: none; }
 .ghost .n { max-width: 7em; overflow: hidden; text-overflow: ellipsis; }
-/* 大螢幕：四個系統排成一排 */
+/* 大螢幕：五個系統排成一排（螢幕不夠寬時三欄） */
 @media (min-width: 1280px) {
-  .cards { max-width: 1600px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .cards { max-width: 1680px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (min-width: 1700px) {
+  .cards { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 }
 @media (min-width: 1600px) {
   #app { padding: 28px; }
 }
-/* 平板、小筆電：兩欄（四張卡片剛好 2×2） */
+/* 平板、小筆電：兩欄 */
 @media (min-width: 641px) and (max-width: 1279px) {
   .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

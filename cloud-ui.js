@@ -82,6 +82,9 @@
             ${x.k !== 'meal' ? `<a class="cl-open" href="${x.k}/index.html${Q}">打開${x.name.replace('紀錄', '').replace('記錄表', '')} →</a>` : ''}</div>
           <p class="cl-msg" hidden></p></form>`;
       }).join('')}
+      ${(() => { const d = (window.__kitchen && window.__kitchen.data || {}).sop, on = !!(d && d.cloud); return `<div class="pp cl-sys"><div class="pp-h"><b>📖 廚房 SOP 食譜</b><span class="cl-st ${on ? 'ok' : ''}">${on ? '已連線' : '未連線'}</span></div>
+        <p class="adm-tip" style="margin:6px 0 8px">SOP 系統的雲端連線（網址和存取碼）在它自己的設定頁設定，和原本的 SOP 系統一樣。</p>
+        <div class="pp-f"><a class="cl-open" style="margin-left:0" href="sop/index.html${Q}#/settings">打開 SOP 設定 →</a></div></div>`; })()}
       <div class="pp cl-sys"><div class="pp-h"><b>📋 備料交接日誌</b><span class="cl-st ${prep[0]}">${esc(prep[1])}</span></div>
         <p class="adm-tip" style="margin:6px 0 0">用首頁登入的帳號同步（要有「備料」權限），不用密碼。</p></div>
       </div>`;

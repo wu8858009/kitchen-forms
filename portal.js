@@ -1,7 +1,7 @@
 /* 廚房專用表格系統 — 首頁儀表板：冰箱溫度、備料交接、菜品銷售、員工餐四個系統的入口與今日重點 */
 (() => {
   'use strict';
-  const VERSION = '1.6.3';
+  const VERSION = '1.7.0';
   const DESK = new URLSearchParams(location.search).has('desktop');
   const Q = DESK ? '?desktop=1' : '';
   const $ = (s, r = document) => r.querySelector(s);
@@ -40,7 +40,8 @@
       };
     });
   }
-  const parse = (t) => { try { return t ? JSON.parse(t) : null; } catch (e) { return null; } };
+  // SOP 系統把資料直接存成物件（不是文字）
+  const parse = (t) => { if (t && typeof t === 'object') return t; try { return t ? JSON.parse(t) : null; } catch (e) { return null; } };
   const mealConf = () => { try { return JSON.parse(localStorage.getItem(LS_MEAL)) || {}; } catch (e) { return {}; } };
 
   // ------------------------------------------------------------------ 讀取各系統的資料
@@ -48,10 +49,10 @@
   async function loadLocal() {
     if (DESK) {
       const r = parse(await (await api()).dash()) || {};
-      return { fridge: parse(r.fridge), dish: parse(r.dish), prep: parse(r.prep), meal: parse(r.meal), mealInfo: r.meal_info || {} };
+      return { fridge: parse(r.fridge), dish: parse(r.dish), prep: parse(r.prep), sop: parse(r.sop), meal: parse(r.meal), mealInfo: r.meal_info || {} };
     }
-    const [f, d, p] = await Promise.all([idbGet('fridgetemp'), idbGet('dishsales'), idbGet('kitchenprep')]);
-    return { fridge: parse(f), dish: parse(d), prep: parse(p) };
+    const [f, d, p, so] = await Promise.all([idbGet('fridgetemp'), idbGet('dishsales'), idbGet('kitchenprep'), idbGet('kitchen-sop')]);
+    return { fridge: parse(f), dish: parse(d), prep: parse(p), sop: parse(so) };
   }
   // 員工餐：上次從雲端算好的摘要先顯示，背景更新完再換上
   const LS_MEALC = 'kitchenforms-meal-cache';
@@ -280,6 +281,36 @@
       `<a class="btn" href="prep/index.html${Q}#/day" data-mod="prep">開啟</a><a class="btn sub" href="prep/index.html${Q}#/sheet" data-mod="prep">列印</a>`);
   }
 
+  // ------------------------------------------------------------------ 廚房 SOP 食譜
+  function sopSummary(db, now) {
+    if (!db || !Array.isArray(db.recipes)) return null;
+    const live = (a) => (a || []).filter((x) => x && !x.deleted);
+    const recipes = live(db.recipes), sops = live(db.sops);
+    const sc = (db.settings || {}).schedule || {}, day = now.getDay();
+    const ids = new Set(recipes.map((r) => r.id));
+    const items = ((sc.days || {})[day] || []).filter((x) => !x.recipeId || ids.has(x.recipeId));
+    const done = new Set((sc.done || {})[ymd(now)] || []);
+    const cats = new Set(recipes.map((r) => r.category).filter(Boolean)).size;
+    return { recipes: recipes.length, sops: sops.length, cats, sched: items.length, schedDone: items.filter((x) => done.has(x.id)).length,
+      next: items.filter((x) => !done.has(x.id)).sort((a, b) => (a.time || '99').localeCompare(b.time || '99')).slice(0, 3).map((x) => {
+        const r = x.recipeId && recipes.find((y) => y.id === x.recipeId);
+        return (x.time ? x.time + ' ' : '') + (r ? r.name : x.text || '');
+      }), cloud: !!db.cloud };
+  }
+  function sopCard(s) {
+    let body;
+    if (!s) body = '<p class="note">食譜、倍數換算、SOP 主資料、備料單、行程、小抄、標籤、盤點訂貨。點「開啟」開始使用（跟原本的廚房 SOP 系統一模一樣）。</p>';
+    else body = `<div class="kpis">
+          <div class="kpi"><div class="l">食譜</div><div class="v">${s.recipes}<small> 道</small></div></div>
+          <div class="kpi"><div class="l">SOP 主資料</div><div class="v">${s.sops}<small> 份</small></div></div>
+          <div class="kpi ${s.sched && s.schedDone >= s.sched ? 'ok' : s.sched ? 'warn' : ''}"><div class="l">今日行程</div><div class="v">${s.schedDone}<small> / ${s.sched}</small></div></div>
+        </div>
+        ${s.next.length ? `<div class="chips">${s.next.map((t) => `<span class="chip">${esc(t)}</span>`).join('')}</div>` : ''}
+        ${s.cats ? `<p class="note">${s.cats} 個分類${s.cloud ? '・已連線 Google 雲端' : ''}</p>` : ''}`;
+    return card('sop', '📖', '廚房 SOP 食譜', '食譜倍數・SOP・備料單・行程・小抄・標籤・盤點', body,
+      `<a class="btn" href="sop/index.html${Q}" data-mod="sop">開啟</a><a class="btn sub" href="sop/index.html${Q}#/sched" data-mod="sop">行程</a><a class="btn sub" href="sop/index.html${Q}#/inv" data-mod="sop">盤點</a>`);
+  }
+
   function card(cls, ic, title, sub, body, foot) {
     return `<article class="card ${cls}"><div class="card-h"><div class="ic">${ic}</div><h2>${title}<small>${sub}</small></h2></div>
       <div class="card-b">${body}</div><div class="card-f">${foot}</div></article>`;
@@ -313,6 +344,7 @@
       fridge: AUTH.can('fridge') && !!(d.fridge && d.fridge.cloud && d.fridge.cloud.on),
       dish: AUTH.can('dish') && !!(d.dish && d.dish.cloud && d.dish.cloud.on),
       prep: AUTH.can('prep') && !!AUTH.url && !!(s && s.token),
+      sop: AUTH.can('sop') && !!(d.sop && d.sop.cloud),
     };
     for (const [m, on] of Object.entries(want)) {
       if (on && !BG[m]) {
@@ -324,7 +356,7 @@
     }
   }
   // 只比資料本身（不比同步時間），沒變就不重畫
-  const snapOf = (d) => [d.fridge, d.dish, d.prep].map((x) => (x ? JSON.stringify(x, (k, v) => (k === 'cloud' || k === '_sync' || k === 'meAct' ? undefined : v)) : '-')).join('|');
+  const snapOf = (d) => [d.fridge, d.dish, d.prep, d.sop].map((x) => (x ? JSON.stringify(x, (k, v) => (k === 'cloud' || k === '_sync' || k === 'sync' || k === 'meAct' ? undefined : v)) : '-')).join('|');
   // 每 3 秒看這台裝置的資料（原始文字沒變就不解析，很省電）；有變就更新首頁
   let lastRaw = '';
   async function watchLocal() {
@@ -332,11 +364,11 @@
     try {
       if (DESK) { const d = await loadLocal(); if (snapOf(d) !== snap) render(); }
       else {
-        const raw = await Promise.all([idbGet('fridgetemp'), idbGet('dishsales'), idbGet('kitchenprep')]);
-        const key = raw.map((x) => x || '').join('');
+        const raw = await Promise.all([idbGet('fridgetemp'), idbGet('dishsales'), idbGet('kitchenprep'), idbGet('kitchen-sop')]);
+        const key = raw.map((x) => (x && typeof x === 'object' ? JSON.stringify(x) : x || '')).join('\u0001');
         if (key !== lastRaw) {
           lastRaw = key;
-          const d = { fridge: parse(raw[0]), dish: parse(raw[1]), prep: parse(raw[2]) };
+          const d = { fridge: parse(raw[0]), dish: parse(raw[1]), prep: parse(raw[2]), sop: parse(raw[3]) };
           if (snapOf(d) !== snap) render();
         }
       }
@@ -365,14 +397,14 @@
     let d;
     try { d = await loadLocal(); } catch (e) { d = {}; }
     last = d;
-    const fs = fridgeSummary(d.fridge, now), ds = dishSummary(d.dish, now), ps = prepSummary(d.prep, now);
+    const fs = fridgeSummary(d.fridge, now), ds = dishSummary(d.dish, now), ps = prepSummary(d.prep, now), ss = sopSummary(d.sop, now);
     const ms = DESK ? mealSummary(d.meal, now) : meal.s;
     const mi = DESK ? (d.mealInfo || {}) : { error: meal.error, loading: !meal.s && (meal.loading || (!meal.fetched && !!mealConf().pw)), at: meal.at, pw: !!mealConf().pw };
     const shop = (fs && fs.shop) || (ds && ds.shop) || '';
     const shopT = shop ? `${shop}・廚房表格` : '廚房專用表格系統';
     if ($('#shop').textContent !== shopT) $('#shop').textContent = shopT;
     // 只顯示這個人有權限的系統
-    const cards = [['fridge', () => fridgeCard(fs)], ['prep', () => prepCard(ps)], ['dish', () => dishCard(ds)], ['meal', () => mealCard(ms, mi)]].filter(([m]) => AUTH.can(m));
+    const cards = [['fridge', () => fridgeCard(fs)], ['prep', () => prepCard(ps)], ['dish', () => dishCard(ds)], ['meal', () => mealCard(ms, mi)], ['sop', () => sopCard(ss)]].filter(([m]) => AUTH.can(m));
     const html = cards.map(([, f]) => f()).join('')
       || `<div class="no-perm">🔒 你目前沒有任何系統的權限。<br>請管理者在「人員與權限」幫你勾選可以使用的系統。</div>`;
     // 只有內容真的變了才重畫（沒改資料就不會閃一下）
@@ -382,7 +414,7 @@
       + (DESK ? '<br>冰箱、菜品的資料與原本的單獨程式共用同一份（%APPDATA%），雲端同步設定也沿用；員工餐的資料在 Google 試算表，跟電腦版同一份。'
         : '<br>冰箱、菜品的資料存在這台裝置，並可各自在設定頁連線 Google 雲端同步；員工餐的資料在 Google 試算表，跟電腦版同一份。');
     if (footHtml !== footT) { $('#foot').innerHTML = footT; footHtml = footT; }
-    window.__kitchen.summary = { fridge: fs, dish: ds, meal: ms, prep: ps };
+    window.__kitchen.summary = { fridge: fs, dish: ds, meal: ms, prep: ps, sop: ss };
     if (AUTH.can('meal')) fetchMeal(force);
     snap = snapOf(d);
     bgFrames(d);
@@ -404,7 +436,7 @@
   $('#refresh').addEventListener('click', () => { render(true).then(() => toast('已更新')); });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'F5') { e.preventDefault(); render(); }
-    if (e.altKey && ['1', '2', '3', '4'].includes(e.key)) { e.preventDefault(); const m = ({ 1: 'fridge', 2: 'dish', 3: 'meal', 4: 'prep' })[e.key]; if (AUTH.can(m)) location.href = m + `/index.html${Q}`; else toast('你沒有這個系統的權限'); }
+    if (e.altKey && ['1', '2', '3', '4', '5'].includes(e.key)) { e.preventDefault(); const m = ({ 1: 'fridge', 2: 'dish', 3: 'meal', 4: 'prep', 5: 'sop' })[e.key]; if (AUTH.can(m)) location.href = m + `/index.html${Q}`; else toast('你沒有這個系統的權限'); }
   });
   // 從各系統回到首頁、或切回這個視窗時更新數字
   document.addEventListener('visibilitychange', () => { if (!document.hidden) render(); });
