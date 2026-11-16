@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0D1117">
+<meta name="theme-color" content="#050b17">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="員工餐">
@@ -12,6 +12,8 @@
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="stylesheet" href="styles.css?v=1">
+<script>(function(){var m=(location.pathname.match(/\/(fridge|prep|dish|meal|sop|equip)\//)||[])[1]||"";var d=document.documentElement;d.classList.add("kf-dark","kf-"+m);if(m==="equip"||m==="fridge"||m==="dish"){d.dataset.theme="dark";new MutationObserver(function(){if(d.dataset.theme!=="dark")d.dataset.theme="dark";}).observe(d,{attributes:true,attributeFilter:["data-theme"]});}})();</script>
+<link rel="stylesheet" href="../kitchen-theme.css?v=1">
 </head>
 <body>
 <div id="splash"><div class="sp-in"><div class="sp-ic">🍽</div><b>餐費管理系統</b><small>PRO Edition · 網頁版</small><div class="sp-bar"><i></i></div><p id="sp-msg">讀取資料…</p></div></div>
@@ -58,6 +60,6 @@
 <script src="js/p-ocr.js?v=1"></script>
 <script src="js/app.js?v=1"></script>
 <script src="../auth.js?v=7"></script>
-<script src="../kitchen-nav.js?v=12"></script>
+<script src="../kitchen-nav.js?v=13"></script>
 </body>
 </html>

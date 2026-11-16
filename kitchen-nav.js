@@ -176,7 +176,7 @@
       const bg = getComputedStyle(top).backgroundColor.match(/[\d.]+/g) || [0, 0, 0, 1];
       const alpha = bg.length > 3 ? +bg[3] : 1;
       const lum = alpha < 0.3 ? (matchMedia('(prefers-color-scheme: dark)').matches ? 0 : 255) : (+bg[0] * 299 + +bg[1] * 587 + +bg[2] * 114) / 1000;
-      if (lum > 160) b.classList.add('light');
+      if (lum > 160 && !document.documentElement.classList.contains('kf-dark')) b.classList.add('light'); // 統一暗色主題時一律用深色按鈕
       if (top.matches('aside.side')) b.style.margin = '0 0 10px';
     }
   }
