@@ -139,3 +139,30 @@
 @media (max-height: 500px) and (orientation: landscape) {
   .auth-select { width: 100%; }
 }
+
+/* ====================================================================== 暗色系 */
+.role-tag { background: #1e2b44; color: #cbd5e1; } .role-tag.admin { background: rgba(245, 158, 11, .2); color: #fcd34d; }
+.am-perm .y { background: rgba(34, 197, 94, .16); color: #86efac; } .am-perm .n { background: #16223a; color: #64748b; }
+.am-list button { background: #0c1527; border-color: #22314b; color: var(--ink); } .am-list button:hover { background: #16223a; }
+.am-list .danger { color: #f87171; }
+.adm { background: var(--bg); }
+.adm-h { background: linear-gradient(110deg, #050b17 0%, #0b1a33 60%, #102549 100%); border-bottom: 1px solid rgba(255, 255, 255, .06); }
+.adm-tip { color: var(--muted); } .adm-tip a { color: #93c5fd; } .adm-tip b { color: #e6edf7; }
+.adm-b .auth-err { color: #fca5a5; background: rgba(239, 68, 68, .12); border-color: rgba(239, 68, 68, .35); }
+.pp { background: var(--card); box-shadow: 0 8px 24px rgba(0, 0, 0, .3); border: 1px solid #1c2944; border-left-width: 4px; border-left-color: #3b82f6; color: var(--ink); }
+.pp.add { border-left-color: #22c55e; } .cl-all { border-left-color: #f59e0b; }
+.me-tag { background: rgba(59, 130, 246, .2); color: #93c5fd; } .off-tag { background: #16223a; color: #8fa0b8; }
+.seg { background: #0b1427; } .seg button { color: #8fa0b8; } .seg button.on { background: #22314b; color: #f1f5fb; }
+.sw { background: #0c1527; border-color: #22314b; color: #cbd5e1; }
+.sw.on { background: rgba(34, 197, 94, .12); border-color: rgba(34, 197, 94, .45); color: #86efac; }
+.pp-f button { background: #0c1527; border-color: #2a3a57; color: #cbd5e1; } .pp-f button:hover { background: #16223a; }
+.pp-f .danger { color: #f87171; }
+.pp-f .pri { background: #16a34a; border-color: #16a34a; color: #fff; }
+.add-g label { color: var(--muted); }
+.add-g input, .cl-sys details input { background: #0b1427; color: var(--ink); border-color: #2a3a57; }
+.cl-sys details { color: var(--muted); }
+.cl-st { background: #16223a; color: #8fa0b8; } .cl-st.ok { background: rgba(34, 197, 94, .16); color: #86efac; } .cl-st.warn { background: rgba(245, 158, 11, .16); color: #fcd34d; }
+.cl-open { color: #93c5fd; }
+.cl-msg { background: rgba(34, 197, 94, .12); color: #86efac; } .cl-msg.bad { background: rgba(239, 68, 68, .12); color: #fca5a5; }
+.no-perm { background: var(--card); }
+.auth-screen { background: linear-gradient(160deg, #050b17 0%, #0b1a33 55%, #13294b 100%); }
