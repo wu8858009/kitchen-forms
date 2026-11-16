@@ -1,7 +1,7 @@
 /* 備料交接日誌 — 依紙本「碧水堂廚房交接表」：時程、站區分配、交接事項、預估銷售量（平日／假日）、早上／下午／晚上交接、值班主管簽名，可列印 A4 交接表 */
 (() => {
   'use strict';
-  const VERSION = '2.4.1';
+  const VERSION = '2.4.2';
   const DESK = new URLSearchParams(location.search).has('desktop');
   const IS_MOBILE = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 
@@ -134,8 +134,8 @@
     const text = JSON.stringify(db);
     try {
       if (DESK) { const r = await (await api()).save(text); if (r !== true) throw new Error(r); } else await IDB.set('db', text);
-      setStatus('已儲存');
-      if (fromSync !== true) schedSync(1500);
+      // 同步寫入時不改狀態文字（畫面不跳動）
+      if (fromSync !== true) { setStatus('已儲存'); schedSync(1500); }
     } catch (e) {
       setStatus('儲存失敗', true);
       alert('儲存失敗：' + (e && e.message || e));
@@ -241,7 +241,7 @@
       return false;
     } finally {
       sync.busy = false;
-      setStatus(syncLabel() || '已儲存', !!sync.err);
+      { const l = syncLabel() || '已儲存'; if ($('#status').textContent !== l) setStatus(l, !!sync.err); }
       const box = $('#syncst'); if (box) box.textContent = syncLabel();
       if (sync.again) { sync.again = false; schedSync(500); }
     }
@@ -266,7 +266,7 @@
       if (dirty) return syncNow();
       const r = await AUTH().call('prep_rev', { token: tk });
       if (r.ok && r.rev !== db._sync.rev) syncNow();
-      else if (r.ok) { sync.last = Date.now(); sync.err = ''; setStatus(syncLabel()); }
+      else if (r.ok) { sync.last = Date.now(); sync.err = ''; const l = syncLabel(); if ($('#status').textContent !== l) setStatus(l); }
     } catch (e) { /* 沒網路：下次再試 */ }
   }
   setInterval(pollSync, 10 * 1000);
