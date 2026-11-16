@@ -557,7 +557,7 @@ def _selftest(out_path):
         fs = json.loads(result["fridge_summary"] or "null") or {}
         ds = json.loads(result["dish_summary"] or "null") or {}
         ps = json.loads(result.get("prep_summary") or "null") or {}
-        result["ok"] = bool(result["home_cards"] == 6 and ps.get("done", 0) >= 2 and ps.get("sign") and result["prep_pdf"] and result["prep_saved"] and result["fridge_loaded"] and result["fridge_home_btn"]
+        result["ok"] = bool(result["home_cards"] == 7 and ps.get("done", 0) >= 2 and ps.get("sign") and result["prep_pdf"] and result["prep_saved"] and result["fridge_loaded"] and result["fridge_home_btn"]
                             and result["fridge_saved_today"] and fs.get("done", 0) >= 1
                             and result["dish_loaded"] and ds.get("t", {}).get("q", 0) >= 3
                             and result["sop_recipes"] and result["sop_saved"] and result["sop_home_btn"] and result["back_home_4"]

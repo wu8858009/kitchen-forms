@@ -17,19 +17,25 @@ MODULES = {
     "prep": ROOT / "prep",
     "sop": VSCODE / "廚房SOP食譜及倍數計算系統" / "web",
     "equip": VSCODE / "設備更換紀錄及價位",  # 網頁檔案直接放在專案資料夾
+    "energy": VSCODE / "碧潭水電瓦斯抄表",  # 線上版（GitHub Pages）的網頁檔案
 }
 # 只複製網頁需要的檔案（沒列的系統整個資料夾都複製）
-ONLY = {"equip": ["index.html", "manifest.webmanifest", "sw.js", "css", "js", "icons"]}
+ONLY = {"equip": ["index.html", "manifest.webmanifest", "sw.js", "css", "js", "icons"], "energy": ["index.html", "manifest.json", "icons"]}
 # auth.js：人員權限（沒有權限的人由 kitchen-nav.js 送回首頁）
-NAV_TAG = '<script src="../auth.js?v=8"></script>\n<script src="../kitchen-nav.js?v=13"></script>'
+NAV_TAG = '<script src="../auth.js?v=9"></script>\n<script src="../kitchen-nav.js?v=14"></script>'
 # 統一暗色配色：在 <html> 標上 kf-dark kf-<系統>，再載入共用主題（要在各系統自己的樣式之後才蓋得過去）；
 # 設備管家、冰箱、菜品另外固定用它們自己的暗色模式（data-theme=dark）
 THEME_TAG = (
-    '<script>(function(){var m=(location.pathname.match(/\\/(fridge|prep|dish|meal|sop|equip)\\//)||[])[1]||"";'
+    '<script>(function(){var m=(location.pathname.match(/\\/(fridge|prep|dish|meal|sop|equip|energy)\\//)||[])[1]||"";'
     'var d=document.documentElement;d.classList.add("kf-dark","kf-"+m);'
     'if(m==="equip"||m==="fridge"||m==="dish"){d.dataset.theme="dark";new MutationObserver(function(){if(d.dataset.theme!=="dark")d.dataset.theme="dark";})'
-    '.observe(d,{attributes:true,attributeFilter:["data-theme"]});}})();</script>\n'
-    '<link rel="stylesheet" href="../kitchen-theme.css?v=1">'
+    '.observe(d,{attributes:true,attributeFilter:["data-theme"]});}'
+    # 水電瓦斯抄表：固定打開它自己的深色模式（body.dark-mode）；不改它記在瀏覽器的設定，原本的網站不受影響
+    'if(m==="energy"){var e=function(){var b=document.body;if(!b)return;b.classList.add("dark-mode");'
+    'new MutationObserver(function(){if(!b.classList.contains("dark-mode"))b.classList.add("dark-mode");})'
+    '.observe(b,{attributes:true,attributeFilter:["class"]});};'
+    'if(document.body)e();else document.addEventListener("DOMContentLoaded",e);}})();</script>\n'
+    '<link rel="stylesheet" href="../kitchen-theme.css?v=3">'
 )
 
 
@@ -55,7 +61,9 @@ def build(out: Path = ROOT / "site") -> Path:
             html = html.replace("</head>", f"{THEME_TAG}\n</head>", 1)
         html = re.sub(r'<meta name="theme-color" content="[^"]*">', '<meta name="theme-color" content="#050b17">', html)
         if NAV_TAG not in html:
-            html = html.replace("</body>", f"{NAV_TAG}\n</body>", 1)
+            # 放在「最後一個」</body> 前面（有的系統程式碼的文字裡也有 </body>，例如報表範本）
+            i = html.rfind("</body>")
+            html = html[:i] + f"{NAV_TAG}\n" + html[i:]
         idx.write_text(html, encoding="utf-8")
     print(f"網站已組裝：{out}")
     return out

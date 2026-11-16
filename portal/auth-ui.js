@@ -5,8 +5,8 @@
   const $ = (s, r = document) => r.querySelector(s);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const ROLE = { admin: '管理者', staff: '員工' };
-  const ICON = { fridge: '🌡️', prep: '📋', dish: '🍱', meal: '🍚', sop: '📖', equip: '🔧' };
-  const SHORT = { fridge: '冰箱', prep: '備料', dish: '菜品', meal: '員工餐', sop: 'SOP食譜', equip: '設備管家' };
+  const ICON = { fridge: '🌡️', prep: '📋', dish: '🍱', meal: '🍚', sop: '📖', equip: '🔧', energy: '⚡' };
+  const SHORT = { fridge: '冰箱', prep: '備料', dish: '菜品', meal: '員工餐', sop: 'SOP食譜', equip: '設備管家', energy: '水電瓦斯' };
   let onChange = () => {};
   function toast(msg, ms = 2600) {
     const t = $('#toast'); t.textContent = msg; t.hidden = false;

@@ -15,8 +15,8 @@
 
 const SH_PEOPLE = '人員權限';
 const SH_DEV = '登入裝置';
-const MODS = ['fridge', 'prep', 'dish', 'meal', 'sop', 'equip'];
-const HEAD = ['姓名', '角色', '冰箱溫度', '備料交接', '菜品銷售', '員工餐', '廚房SOP', '設備管家', '停用', 'PIN雜湊', '更新時間'];
+const MODS = ['fridge', 'prep', 'dish', 'meal', 'sop', 'equip', 'energy'];
+const HEAD = ['姓名', '角色', '冰箱溫度', '備料交接', '菜品銷售', '員工餐', '廚房SOP', '設備管家', '水電瓦斯', '停用', 'PIN雜湊', '更新時間'];
 const DEV_HEAD = ['Token', '姓名', '登入時間', '裝置', '最後使用'];
 const SH_PREP = '備料資料';
 const PREP_HEAD = ['鍵', '值', '版本', '更新者', '更新時間'];
