@@ -1,7 +1,7 @@
 /* 廚房專用表格系統 — 首頁儀表板：冰箱溫度、備料交接、菜品銷售、員工餐四個系統的入口與今日重點 */
 (() => {
   'use strict';
-  const VERSION = '1.6.1';
+  const VERSION = '1.6.2';
   const DESK = new URLSearchParams(location.search).has('desktop');
   const Q = DESK ? '?desktop=1' : '';
   const $ = (s, r = document) => r.querySelector(s);
@@ -62,7 +62,9 @@
     const mc = mealConf();
     if (DESK || !mc.pw || meal.loading) return;
     if (!force && Date.now() - meal.fetched < 15 * 1000) return; // 15 秒內不重複抓
-    meal.loading = true; paintMeal();
+    meal.loading = true;
+    if (!meal.s) paintMeal(); // 已經有數字就不顯示「更新中」，背景默默更新
+    const before = JSON.stringify([meal.s, meal.error]);
     const ac = window.AbortController ? new AbortController() : null;
     const to = setTimeout(() => ac && ac.abort(), 20000);
     try {
@@ -75,12 +77,13 @@
     } catch (e) { meal.error = e && e.name === 'AbortError' ? '雲端回應太慢，稍後再按「更新」' : '連不上雲端（' + (e.message || e) + '）'; }
     clearTimeout(to);
     meal.loading = false; meal.fetched = Date.now();
-    paintMeal();
+    if (JSON.stringify([meal.s, meal.error]) !== before || !$('.card.meal .kpis')) paintMeal(); // 數字有變才重畫
   }
   function paintMeal() {
     const el = $('.card.meal');
     if (!el) return;
-    el.outerHTML = mealCard(meal.s, { error: meal.error, loading: meal.loading, at: meal.at, pw: !!mealConf().pw });
+    el.outerHTML = mealCard(meal.s, { error: meal.error, loading: meal.loading && !meal.s, at: meal.at, pw: !!mealConf().pw });
+    cardsHtml = ''; // 首頁下次比對時重新記錄
     if (window.__kitchen.summary) window.__kitchen.summary.meal = meal.s;
   }
 
@@ -298,7 +301,7 @@
   try { const n = sessionStorage.getItem('kitchenforms-notice'); if (n) { sessionStorage.removeItem('kitchenforms-notice'); setTimeout(() => toast(n, 4500), 600); } } catch (e) { /* */ }
 
   // ------------------------------------------------------------------ 畫面
-  let last = null, snap = '';
+  let last = null, snap = '', cardsHtml = '', footHtml = '', changedAt = null;
   // ------------------------------------------------------------------ 背景同步
   // 有權限、有開雲端同步的系統，放在看不到的小框架裡執行：它們會自己跟雲端同步（冰箱、菜品每 15 秒，備料每 10 秒），
   // 存到這台裝置；首頁每 10 秒看資料有沒有變，有變就更新數字。別台（例如管理者）改了資料，不用重新打開就會出現。
@@ -355,7 +358,8 @@
   }, 5000);
   async function render(force) {
     const now = new Date();
-    $('#today').textContent = `${now.getFullYear()}/${now.getMonth() + 1}/${now.getDate()}（${WD[now.getDay()]}）`;
+    const todayT = `${now.getFullYear()}/${now.getMonth() + 1}/${now.getDate()}（${WD[now.getDay()]}）`;
+    if ($('#today').textContent !== todayT) $('#today').textContent = todayT;
     if (AUTH.on) { await AUI.ensure(); if (force) AUI.refresh(); }
     paintWho();
     let d;
@@ -363,16 +367,21 @@
     last = d;
     const fs = fridgeSummary(d.fridge, now), ds = dishSummary(d.dish, now), ps = prepSummary(d.prep, now);
     const ms = DESK ? mealSummary(d.meal, now) : meal.s;
-    const mi = DESK ? (d.mealInfo || {}) : { error: meal.error, loading: meal.loading || (!meal.fetched && !!mealConf().pw), at: meal.at, pw: !!mealConf().pw };
+    const mi = DESK ? (d.mealInfo || {}) : { error: meal.error, loading: !meal.s && (meal.loading || (!meal.fetched && !!mealConf().pw)), at: meal.at, pw: !!mealConf().pw };
     const shop = (fs && fs.shop) || (ds && ds.shop) || '';
-    $('#shop').textContent = shop ? `${shop}・廚房表格` : '廚房專用表格系統';
+    const shopT = shop ? `${shop}・廚房表格` : '廚房專用表格系統';
+    if ($('#shop').textContent !== shopT) $('#shop').textContent = shopT;
     // 只顯示這個人有權限的系統
     const cards = [['fridge', () => fridgeCard(fs)], ['prep', () => prepCard(ps)], ['dish', () => dishCard(ds)], ['meal', () => mealCard(ms, mi)]].filter(([m]) => AUTH.can(m));
-    $('#cards').innerHTML = cards.map(([, f]) => f()).join('')
+    const html = cards.map(([, f]) => f()).join('')
       || `<div class="no-perm">🔒 你目前沒有任何系統的權限。<br>請管理者在「人員與權限」幫你勾選可以使用的系統。</div>`;
-    $('#foot').innerHTML = `廚房專用表格系統 v${VERSION}${DESK ? '（桌面版）' : ''}・更新於 ${pad(now.getHours())}:${pad(now.getMinutes())}`
+    // 只有內容真的變了才重畫（沒改資料就不會閃一下）
+    if (html !== cardsHtml || !$('#cards .card, #cards .no-perm')) { $('#cards').innerHTML = html; cardsHtml = html; changedAt = now; }
+    if (!changedAt) changedAt = now;
+    const footT = `廚房專用表格系統 v${VERSION}${DESK ? '（桌面版）' : ''}・資料更新於 ${pad(changedAt.getHours())}:${pad(changedAt.getMinutes())}`
       + (DESK ? '<br>冰箱、菜品的資料與原本的單獨程式共用同一份（%APPDATA%），雲端同步設定也沿用；員工餐的資料在 Google 試算表，跟電腦版同一份。'
         : '<br>冰箱、菜品的資料存在這台裝置，並可各自在設定頁連線 Google 雲端同步；員工餐的資料在 Google 試算表，跟電腦版同一份。');
+    if (footHtml !== footT) { $('#foot').innerHTML = footT; footHtml = footT; }
     window.__kitchen.summary = { fridge: fs, dish: ds, meal: ms, prep: ps };
     if (AUTH.can('meal')) fetchMeal(force);
     snap = snapOf(d);
