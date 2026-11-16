@@ -1,0 +1,103 @@
+/* 廚房專用表格系統 — 各系統統一的暗色配色（跟首頁一樣的深藍色系）
+ * 由 build_web.py 加到每個系統頁面的 <head> 最後；只在螢幕上生效，列印、PDF 照原本的白底。
+ * 各系統原本的程式不改，只覆蓋它們的顏色變數；每個系統保留自己的主色（冰箱藍、菜品橘、SOP 琥珀、設備管家青綠、備料綠）。
+ * html 上的 kf-<系統> class 由同一處的小段程式加上。 */
+@media screen {
+  html.kf-dark { color-scheme: dark; background: #070d1a; }
+
+  /* ---------------- 冰箱溫度記錄表 */
+  html.kf-dark.kf-fridge {
+    --bg: #070d1a; --surface: #101a2e; --surface-2: #16223a; --line: #22314b; --text: #e6edf7; --text-2: #cbd5e1; --muted: #8fa0b8;
+    --brand: #60a5fa; --brand-ink: #06101f; --brand-soft: #16294a; --nav: #050b17; --nav-2: #102549; --nav-text: #8fa1bb;
+    --series: #60a5fa; --series-soft: #1b3150; --up: #4ade80; --down: #f87171; --danger: #f87171; --has: #122036;
+    --bad-soft: #3a1820; --warn: #fbbf24; --warn-soft: #382c10; --ok-soft: #11301f; --band: rgba(74, 222, 128, .10); --shadow: 0 1px 2px rgba(0, 0, 0, .35);
+  }
+  /* ---------------- 菜品銷售紀錄 */
+  html.kf-dark.kf-dish {
+    --bg: #070d1a; --surface: #101a2e; --surface-2: #16223a; --line: #22314b; --text: #e6edf7; --text-2: #cbd5e1; --muted: #8fa0b8;
+    --brand: #f97316; --brand-ink: #1a0d04; --brand-soft: #3a2316; --nav: #050b17; --nav-2: #102549; --nav-text: #8fa1bb;
+    --series: #60a5fa; --series-soft: #1b3150; --up: #4ade80; --down: #f87171; --danger: #f87171; --has: #241a14;
+    --bad-soft: #3a1820; --warn: #fbbf24; --warn-soft: #382c10; --ok-soft: #11301f; --shadow: 0 1px 2px rgba(0, 0, 0, .35);
+  }
+  /* ---------------- 員工餐金額總計（本來就是暗色，改成同一組深藍） */
+  html.kf-dark.kf-meal {
+    --bg: #070d1a; --sidebar: #050b17; --panel: #0c1527; --card: #101a2e; --border: #22314b;
+    --text: #e6edf7; --subtext: #8fa0b8; --muted: #5b6b86; --nav-sel: #16223a; --row-alt: #0e1830; --chip: #22314b; --sel-row: #1d3a6b;
+  }
+  /* ---------------- 廚房 SOP 食譜 */
+  html.kf-dark.kf-sop {
+    --bg: #070d1a; --card: #101a2e; --fg: #e6edf7; --muted: #8fa0b8; --line: #22314b;
+    --accent: #f59e0b; --accent-fg: #1a1206; --accent-soft: #3a2a14; --red: #f87171; --red-soft: #3b1d1d;
+    --warn: #fbbf24; --ok: #6ee7a0; --input: #0b1427; --shadow: 0 1px 2px rgba(0, 0, 0, .35);
+  }
+  /* ---------------- 設備管家（它原本的暗色模式＋同一組深藍） */
+  html.kf-dark.kf-equip {
+    --accent: #2dd4bf; --accent-2: #5eead4; --accent-soft: #10343a;
+    --bg: #070d1a; --card: #101a2e; --ink: #e6edf7; --ink-2: #cbd5e1; --muted: #8fa0b8; --line: #22314b; --hover: #16223a;
+    --red: #f87171; --red-soft: #3b1414; --amber: #fbbf24; --amber-soft: #3a2a0a; --green: #4ade80; --green-soft: #0f2e1b;
+    --blue: #93c5fd; --blue-soft: #132544; --gray-soft: #16223a;
+    --grad-navy: linear-gradient(180deg, #050b17 0%, #0b1a33 100%);
+    --shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 10px 26px -10px rgba(0, 0, 0, .55);
+    --on-accent: #042f2e; --on-accent-2: #064e48;
+  }
+
+  /* ---------------- 備料交接日誌（本系統自己的，畫面上直接改） */
+  html.kf-dark.kf-prep {
+    --nav: #050b17; --nav-2: #102549; --bg: #070d1a; --card: #101a2e; --ink: #e6edf7; --ink-2: #cbd5e1; --muted: #8fa0b8; --line: #22314b; --soft: #0c1527;
+    --brand: #10b981; --brand-2: #34d399; --ok: #22c55e; --warn: #f59e0b; --bad: #f87171;
+    --sh: 0 1px 0 rgba(255, 255, 255, .03) inset, 0 8px 24px rgba(0, 0, 0, .35);
+  }
+  html.kf-prep.kf-dark body { background: radial-gradient(1200px 500px at 100% -10%, rgba(16, 185, 129, .12) 0%, transparent 60%), var(--bg); color: var(--ink); }
+  html.kf-prep.kf-dark .top { background: linear-gradient(110deg, #050b17 0%, #0b1a33 60%, #102549 100%); border-bottom: 1px solid rgba(255, 255, 255, .06); }
+  html.kf-prep.kf-dark #nav a.on { background: #1d3a6b; color: #fff; }
+  html.kf-prep.kf-dark .hero { background: linear-gradient(125deg, #064e3b 0%, #0f766e 55%, #0e7490 100%); box-shadow: 0 10px 28px rgba(0, 0, 0, .4); }
+  html.kf-prep.kf-dark .btn, html.kf-prep.kf-dark .bar input[type=date], html.kf-prep.kf-dark .cl b, html.kf-prep.kf-dark .cl .bx,
+  html.kf-prep.kf-dark .it .ck, html.kf-prep.kf-dark .as input { background: #0c1527; color: var(--ink); border-color: var(--line); }
+  html.kf-prep.kf-dark .btn:hover { background: #16223a; }
+  html.kf-prep.kf-dark .btn.pri { background: linear-gradient(135deg, #059669, #10b981); color: #fff; }
+  html.kf-prep.kf-dark .btn.danger { color: #f87171; }
+  html.kf-prep.kf-dark .btn.danger:hover { background: rgba(239, 68, 68, .12); border-color: rgba(239, 68, 68, .4); }
+  html.kf-prep.kf-dark .pill.wd { background: #132544; color: #93c5fd; }
+  html.kf-prep.kf-dark .pill.hd { background: #3a2a0a; color: #fcd34d; }
+  html.kf-prep.kf-dark .sec { color: #a7f3d0; }
+  html.kf-prep.kf-dark .ic { background: #10343a; }
+  html.kf-prep.kf-dark .cnt { background: #0f2e1b; color: #6ee7a0; }
+  html.kf-prep.kf-dark .box { background: var(--card); border-color: rgba(255, 255, 255, .05); }
+  html.kf-prep.kf-dark .cl { background: #0c1527; border-color: var(--line); color: var(--ink); }
+  html.kf-prep.kf-dark .cl:hover { background: #16223a; border-color: #2f5d4e; }
+  html.kf-prep.kf-dark .cl b { color: #a7f3d0; }
+  html.kf-prep.kf-dark .cl.on { background: rgba(34, 197, 94, .12); border-color: rgba(34, 197, 94, .45); }
+  html.kf-prep.kf-dark .cl.on span:not(.bx), html.kf-prep.kf-dark .cl.on b { color: #86efac; }
+  html.kf-prep.kf-dark .cl.on .bx { background: var(--ok); color: #fff; }
+  html.kf-prep.kf-dark .cl.now { background: rgba(245, 158, 11, .12); border-color: #f59e0b; }
+  html.kf-prep.kf-dark .grid2 input, html.kf-prep.kf-dark .it input, html.kf-prep.kf-dark textarea, html.kf-prep.kf-dark .field input,
+  html.kf-prep.kf-dark .field select, html.kf-prep.kf-dark .ls input { background: #0b1427; color: var(--ink); border-color: #2a3a57; }
+  html.kf-prep.kf-dark .grid2 input:focus, html.kf-prep.kf-dark .it input.q:focus, html.kf-prep.kf-dark textarea:focus, html.kf-prep.kf-dark .field input:focus { background: #0e1a31; }
+  html.kf-prep.kf-dark .st { background: var(--card); }
+  html.kf-prep.kf-dark .st-h { background: linear-gradient(180deg, color-mix(in srgb, var(--c) 18%, #101a2e), #101a2e); }
+  html.kf-prep.kf-dark .st-h .prog { background: color-mix(in srgb, var(--c) 20%, #101a2e); }
+  html.kf-prep.kf-dark .bar-p { background: #1b2840; }
+  html.kf-prep.kf-dark .it + .it { border-top-color: #18243b; }
+  html.kf-prep.kf-dark .it:hover { background: #0e1830; }
+  html.kf-prep.kf-dark .it .tg { background: color-mix(in srgb, var(--c) 14%, #0c1527); border-color: color-mix(in srgb, var(--c) 35%, #22314b); }
+  html.kf-prep.kf-dark .it.done { background: rgba(34, 197, 94, .08); }
+  html.kf-prep.kf-dark .it.done .nmt { color: #86efac; }
+  html.kf-prep.kf-dark .it.done input.q { background: #0b1427; border-color: rgba(34, 197, 94, .45); color: #86efac; }
+  html.kf-prep.kf-dark .sh-am .ic { background: #3a2a0a; } html.kf-prep.kf-dark .sh-pm .ic { background: #0c2a3f; } html.kf-prep.kf-dark .sh-ev .ic { background: #1e1b4b; }
+  html.kf-prep.kf-dark input.sign { background: #0b1427; border-color: #2f5d4e; color: #93c5fd; }
+  html.kf-prep.kf-dark .items-t, html.kf-prep.kf-dark .tbl-wrap { background: var(--card); }
+  html.kf-prep.kf-dark .items-t th { background: #0c1527; }
+  html.kf-prep.kf-dark .items-t th, html.kf-prep.kf-dark .items-t td { border-bottom-color: #1c2944; }
+  html.kf-prep.kf-dark .items-t tr[data-id]:hover td { background: #0e1830; }
+  html.kf-prep.kf-dark .items-t input, html.kf-prep.kf-dark .items-t select { color: var(--ink); }
+  html.kf-prep.kf-dark .items-t input:hover, html.kf-prep.kf-dark .items-t select:hover, html.kf-prep.kf-dark .items-t input:focus, html.kf-prep.kf-dark .items-t select:focus { background: #0b1427; }
+  html.kf-prep.kf-dark .items-t select option { background: #101a2e; color: var(--ink); }
+  html.kf-prep.kf-dark .items-t tr.sth td { background: linear-gradient(90deg, #0f2e1b, #101a2e); color: #a7f3d0; border-bottom-color: #1c3b2c; }
+  html.kf-prep.kf-dark .modal { background: #111b30; color: var(--ink); border: 1px solid #22314b; }
+  html.kf-prep.kf-dark .toast { background: #e6edf7; color: #0b1220; }
+  html.kf-prep.kf-dark .sheets-fit .sheet { box-shadow: 0 6px 24px rgba(0, 0, 0, .5); }
+}
+@media screen and (max-width: 760px) {
+  html.kf-prep.kf-dark .items-t tr[data-id] { background: var(--card); }
+  html.kf-prep.kf-dark .items-t input, html.kf-prep.kf-dark .items-t select { background: #0b1427; }
+}
