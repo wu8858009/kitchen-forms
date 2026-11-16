@@ -1,7 +1,7 @@
 /* 備料交接日誌 — 依紙本「碧水堂廚房交接表」：時程、站區分配、交接事項、預估銷售量（平日／假日）、早上／下午／晚上交接、值班主管簽名，可列印 A4 交接表 */
 (() => {
   'use strict';
-  const VERSION = '2.0.0';
+  const VERSION = '2.1.0';
   const DESK = new URLSearchParams(location.search).has('desktop');
   const IS_MOBILE = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 
@@ -222,41 +222,59 @@
     const e = L.q[it.id] || {};
     const tg = target(it, hol);
     return `<div class="it${filled(e) ? ' done' : ''}" data-id="${it.id}">
-      <div class="nm">${esc(it.name)}<small>${esc(it.unit || '')}<em class="tg2">${it.unit ? '・' : ''}${hol ? '假日' : '平日'} ${esc(tg) || '—'}</em></small></div>
-      <span class="tg" title="${hol ? '假日' : '平日'}預估銷售量">${esc(tg) || '—'}</span>
+      <div class="nm"><span class="nmt">${esc(it.name)}</span>${it.unit ? `<span class="unit-c">${esc(it.unit)}</span>` : ''}<small><em class="tg2">${hol ? '假日' : '平日'} ${esc(tg) || '—'}</em></small></div>
+      <span class="tg" title="${hol ? '假日' : '平日'}預估銷售量">${ml(tg) || '—'}</span>
       <input class="q" data-f="v" value="${esc(e.v || '')}" placeholder="實際" aria-label="${esc(it.name)} 實際數量">
       <button class="ck" data-act="ck" title="完成（✓）">✓</button></div>`;
   }
   const chk = (on, act, id, html, cls = '') => `<button class="cl${on ? ' on' : ''}${cls}" data-act="${act}" data-id="${id}"><span class="bx">✓</span>${html}</button>`;
+  const PAL = ['#0ea5e9', '#f59e0b', '#10b981', '#8b5cf6', '#ef4444', '#14b8a6', '#ec4899', '#6366f1'];
+  const pct = (n, t) => (t ? Math.round(n / t * 100) : 0);
+  // 圓形進度
+  function ring(n, t) {
+    const r = 30, c = 2 * Math.PI * r, p = t ? n / t : 0;
+    return `<svg viewBox="0 0 76 76" aria-hidden="true"><circle cx="38" cy="38" r="${r}" class="rg-bg"/><circle cx="38" cy="38" r="${r}" class="rg-fg" stroke-dasharray="${(c * p).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 38 38)"/></svg>
+      <div class="rg-t"><b>${pct(n, t)}<small>%</small></b><span>備料 ${n}/${t}</span></div>`;
+  }
+  const SHIFT_ICON = { am: '🌅', pm: '☀️', ev: '🌙' };
   function viewDay(el) {
     const d = cur.date, hol = isHol(d), L = log(d) || { q: {}, sched: {}, tasks: {}, shift: {}, assign: {} };
-    const S = dayStats(d), isToday = d === today();
-    const sts = stations().map((s) => {
-      const on = itemsOf(s.id).filter((i) => onDay(i, d)), p = S.per[s.id];
-      return `<section class="st" data-st="${s.id}"><div class="st-h"><h2>${esc(stName(s))}</h2><span class="prog${p.n >= p.t ? ' ok' : ''}">${p.n}/${p.t}</span></div>
-        ${on.map((it) => itemRow(it, L, hol)).join('') || '<p class="muted" style="padding:8px 14px;margin:0">這個站區沒有品項</p>'}</section>`;
+    const S = dayStats(d), isToday = d === today(), dt = pd(d);
+    const sts = stations().map((s, i) => {
+      const on = itemsOf(s.id).filter((x) => onDay(x, d)), p = S.per[s.id];
+      return `<section class="st${p.t && p.n >= p.t ? ' all' : ''}" data-st="${s.id}" style="--c:${PAL[i % PAL.length]}"><div class="st-h"><h2>${esc(stName(s))}</h2><span class="prog${p.n >= p.t ? ' ok' : ''}">${p.n}/${p.t}</span>
+        <div class="bar-p"><i style="width:${pct(p.n, p.t)}%"></i></div></div>
+        ${on.map((it) => itemRow(it, L, hol)).join('') || '<p class="muted" style="padding:10px 16px;margin:0">這個站區沒有品項</p>'}</section>`;
     }).join('');
     const A = L.assign || {}, SC = L.sched || {}, TK = L.tasks || {}, SH = L.shift || {};
     const rev = (db.rev || {})[hol ? 'hd' : 'wd'] || '';
-    el.innerHTML = `<div class="wrap">${dateBar('day')}
-      <div class="kpis">
-        <div class="kpi"><div class="l">預估營業額（${hol ? '假日' : '平日'}）</div><div class="v">${esc(rev) || '—'}</div></div>
-        <div class="kpi ${S.done >= S.total && S.total ? 'ok' : 'warn'}"><div class="l">備料完成</div><div class="v" id="kdone">${S.done}<small> / ${S.total}</small></div></div>
-        <div class="kpi ${S.signed ? 'ok' : ''}"><div class="l">值班主管簽名</div><div class="v" id="ksign">${S.signed ? esc(L.sign) : '<small>未簽</small>'}</div></div>
+    el.innerHTML = `<div class="wrap">
+      <div class="hero">
+        <div class="hero-l"><div class="h-t">${esc(db.title || '碧水堂廚房交接表')}</div>
+          <div class="h-d">${dt.getMonth() + 1}月${dt.getDate()}日<span>星期${WD[dt.getDay()]}${isToday ? '・今天' : ''}</span></div>
+          <div class="h-k">
+            <div class="hk"><span>💰 預估營業額</span><b>${esc(rev) || '—'}</b></div>
+            <div class="hk"><span>⏰ 時程</span><b class="k-sch">${S.sched.join('/')}</b></div>
+            <div class="hk"><span>📌 交接事項</span><b class="k-tk">${S.tasks.join('/')}</b></div>
+            <div class="hk${S.signed ? ' ok' : ''}" id="ksignbox"><span>✍️ 主管簽名</span><b id="ksign">${S.signed ? esc(L.sign) : '未簽'}</b></div>
+          </div></div>
+        <div class="ring${S.done >= S.total && S.total ? ' ok' : ''}" id="kring" title="備料完成">${ring(S.done, S.total)}</div>
       </div>
-      <div class="box"><h3>今日時程<span class="muted" id="ksch" style="font-size:13px;font-weight:normal">${S.sched[0]}/${S.sched[1]}</span></h3>
-        <div class="sched">${sched().map((x) => chk(SC[x.id], 'sch', x.id, `<b>${esc(x.time)}</b><span>${esc(x.name)}</span>`, isToday && nowSlot(x) ? ' now' : '')).join('') || '<span class="muted">在「品項設定」可以新增時段</span>'}</div></div>
+      ${dateBar('day')}
+      <div class="box"><h3><i class="ic">⏰</i>今日時程<span class="cnt k-sch">${S.sched.join('/')}</span></h3>
+        <div class="sched">${sched().map((x) => chk(SC[x.id], 'sch', x.id, `<b>${esc(x.time)}</b><span>${esc(x.name)}</span>${isToday && nowSlot(x) ? '<em class="nowtag">進行中</em>' : ''}`, isToday && nowSlot(x) ? ' now' : '')).join('') || '<span class="muted">在「品項設定」可以新增時段</span>'}</div></div>
       <div class="bottom">
-        <div class="box"><h3>站區分配<button class="btn sm" data-act="copyassign" title="帶入前一天的站區分配">帶入前一天</button></h3><div class="grid2">
-          ${assignKeys().map((k) => `<label>${esc(k)}</label><input data-assign="${esc(k)}" value="${esc(A[k] || '')}">`).join('') || '<span class="muted">在「品項設定」可以新增站區分配的位置</span>'}</div></div>
-        <div class="box"><h3>交接事項<span class="muted" id="ktk" style="font-size:13px;font-weight:normal">${S.tasks[0]}/${S.tasks[1]}</span></h3>
+        <div class="box"><h3><i class="ic">👥</i>站區分配<button class="btn sm" data-act="copyassign" title="帶入前一天的站區分配">↺ 帶入前一天</button></h3><div class="grid2">
+          ${assignKeys().map((k) => `<label>${esc(k)}</label><input data-assign="${esc(k)}" value="${esc(A[k] || '')}" placeholder="姓名">`).join('') || '<span class="muted">在「品項設定」可以新增站區分配的位置</span>'}</div></div>
+        <div class="box"><h3><i class="ic">📌</i>交接事項<span class="cnt k-tk">${S.tasks.join('/')}</span></h3>
           <div class="tasks">${tasks().map((x) => chk(TK[x.id], 'task', x.id, `<span>${esc(x.name)}</span>`)).join('') || '<span class="muted">在「品項設定」可以新增交接事項</span>'}</div></div>
       </div>
-      <h3 class="sec">預估銷售量・備料</h3>
+      <h3 class="sec"><i class="ic">🍲</i>預估銷售量・備料<span class="cnt" id="kdone">${S.done}/${S.total}</span><span class="pill ${hol ? 'hd' : 'wd'} sm">${hol ? '假日' : '平日'}份量</span></h3>
       <div class="stations">${sts}</div>
-      <div class="bottom">
-        ${SHIFTS.map(([k, n]) => `<div class="box"><h3>${n}交接</h3><textarea rows="3" data-shift="${k}" placeholder="${n}要交接的事情">${esc(SH[k] || '')}</textarea></div>`).join('')}
-        <div class="box"><h3>值班主管簽名</h3><input class="sign" data-k="sign" value="${esc(L.sign || '')}" placeholder="簽名（輸入姓名）"></div>
+      <h3 class="sec"><i class="ic">📝</i>交接紀錄</h3>
+      <div class="bottom shifts">
+        ${SHIFTS.map(([k, n]) => `<div class="box sh-${k}"><h3><i class="ic">${SHIFT_ICON[k]}</i>${n}交接</h3><textarea rows="3" data-shift="${k}" placeholder="${n}要交接的事情">${esc(SH[k] || '')}</textarea></div>`).join('')}
+        <div class="box sh-sign"><h3><i class="ic">✍️</i>值班主管簽名</h3><input class="sign" data-k="sign" value="${esc(L.sign || '')}" placeholder="簽名（輸入姓名）"></div>
       </div></div>`;
     bindBar(el, 'day');
     const touch = () => { const LL = log(d, true); LL.at = now(); save(); return LL; };
@@ -300,12 +318,18 @@
   }
   function refreshKpi() {
     const S = dayStats(cur.date);
-    const k = $('#kdone'); if (k) { k.innerHTML = `${S.done}<small> / ${S.total}</small>`; k.parentElement.className = `kpi ${S.done >= S.total && S.total ? 'ok' : 'warn'}`; }
-    $$('.st').forEach((sec) => { const p = S.per[sec.dataset.st]; const e = $('.prog', sec); if (p && e) { e.textContent = `${p.n}/${p.t}`; e.classList.toggle('ok', p.n >= p.t); } });
+    const k = $('#kdone'); if (k) k.textContent = `${S.done}/${S.total}`;
+    const r = $('#kring'); if (r) { r.innerHTML = ring(S.done, S.total); r.classList.toggle('ok', S.done >= S.total && !!S.total); }
+    $$('.st').forEach((sec) => {
+      const p = S.per[sec.dataset.st]; const e = $('.prog', sec); if (!p || !e) return;
+      e.textContent = `${p.n}/${p.t}`; e.classList.toggle('ok', p.n >= p.t);
+      sec.classList.toggle('all', !!p.t && p.n >= p.t);
+      const b = $('.bar-p i', sec); if (b) b.style.width = pct(p.n, p.t) + '%';
+    });
     const L = log(cur.date) || {};
-    const s = $('#ksign'); if (s) { s.innerHTML = S.signed ? esc(L.sign) : '<small>未簽</small>'; s.parentElement.classList.toggle('ok', S.signed); }
-    const a = $('#ksch'); if (a) a.textContent = S.sched.join('/');
-    const b = $('#ktk'); if (b) b.textContent = S.tasks.join('/');
+    const s = $('#ksign'); if (s) { s.textContent = S.signed ? L.sign : '未簽'; $('#ksignbox').classList.toggle('ok', S.signed); }
+    $$('.k-sch').forEach((x) => { x.textContent = S.sched.join('/'); });
+    $$('.k-tk').forEach((x) => { x.textContent = S.tasks.join('/'); });
   }
 
   // ------------------------------------------------------------------ 紙本交接表（照「碧水堂廚房交接表」）
