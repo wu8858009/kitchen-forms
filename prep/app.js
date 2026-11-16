@@ -1,7 +1,7 @@
 /* 備料交接日誌 — 依紙本「碧水堂廚房交接表」：時程、站區分配、交接事項、預估銷售量（平日／假日）、早上／下午／晚上交接、值班主管簽名，可列印 A4 交接表 */
 (() => {
   'use strict';
-  const VERSION = '2.3.1';
+  const VERSION = '2.4.0';
   const DESK = new URLSearchParams(location.search).has('desktop');
   const IS_MOBILE = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 
@@ -255,7 +255,21 @@
   }
   document.addEventListener('focusout', () => { if (sync.pendingRender) setTimeout(() => { const a = document.activeElement; if (!(a && a.closest && a.closest('#app') && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))) rerender(); }, 300); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) schedSync(300); });
-  setInterval(() => { if (!document.hidden) syncNow(); }, 30 * 1000);
+  // 每 10 秒問一次雲端版本（很快）；別台改了、或這台有還沒上傳的修改，才做完整同步
+  async function pollSync() {
+    const tk = token();
+    if (!tk || document.hidden || sync.busy) return;
+    if (!db._sync) return syncNow();
+    try {
+      const B = db._sync.base || {}, L = flat(db);
+      const dirty = Object.keys(L).some((k) => L[k] !== B[k]) || Object.keys(B).some((k) => !(k in L));
+      if (dirty) return syncNow();
+      const r = await AUTH().call('prep_rev', { token: tk });
+      if (r.ok && r.rev !== db._sync.rev) syncNow();
+      else if (r.ok) { sync.last = Date.now(); sync.err = ''; setStatus(syncLabel()); }
+    } catch (e) { /* 沒網路：下次再試 */ }
+  }
+  setInterval(pollSync, 10 * 1000);
 
   // ------------------------------------------------------------------ 資料
   const stations = () => db.stations.filter((s) => !s.deleted).sort((a, b) => a.ord - b.ord);

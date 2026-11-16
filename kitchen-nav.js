@@ -3,6 +3,14 @@
   'use strict';
   const DESK = new URLSearchParams(location.search).has('desktop');
   const home = '../index.html' + (DESK ? '?desktop=1' : '');
+  // 首頁的背景同步框架（看不到的小框架）：只負責同步，不放按鈕、不跳轉、不連線設定
+  let BG = false;
+  try { BG = window.top !== window; } catch (e) { BG = true; }
+  if (BG) {
+    const md = (location.pathname.match(/\/(fridge|prep|dish|meal)\//) || [])[1];
+    if (md && window.KitchenAuth && !window.KitchenAuth.can(md)) location.replace('about:blank');
+    return;
+  }
   // 權限：沒有這個系統權限（或還沒登入）就回首頁
   const mod = (location.pathname.match(/\/(fridge|prep|dish|meal)\//) || [])[1];
   if (mod && window.KitchenAuth && !window.KitchenAuth.can(mod)) { location.replace(home); return; }

@@ -1,7 +1,7 @@
 /* 廚房專用表格系統 — 首頁儀表板：冰箱溫度、備料交接、菜品銷售、員工餐四個系統的入口與今日重點 */
 (() => {
   'use strict';
-  const VERSION = '1.5.1';
+  const VERSION = '1.6.0';
   const DESK = new URLSearchParams(location.search).has('desktop');
   const Q = DESK ? '?desktop=1' : '';
   const $ = (s, r = document) => r.querySelector(s);
@@ -61,7 +61,7 @@
   async function fetchMeal(force) {
     const mc = mealConf();
     if (DESK || !mc.pw || meal.loading) return;
-    if (!force && Date.now() - meal.fetched < 60 * 1000) return; // 一分鐘內不重複抓
+    if (!force && Date.now() - meal.fetched < 25 * 1000) return; // 25 秒內不重複抓
     meal.loading = true; paintMeal();
     const ac = window.AbortController ? new AbortController() : null;
     const to = setTimeout(() => ac && ac.abort(), 20000);
@@ -298,7 +298,36 @@
   try { const n = sessionStorage.getItem('kitchenforms-notice'); if (n) { sessionStorage.removeItem('kitchenforms-notice'); setTimeout(() => toast(n, 4500), 600); } } catch (e) { /* */ }
 
   // ------------------------------------------------------------------ 畫面
-  let last = null;
+  let last = null, snap = '';
+  // ------------------------------------------------------------------ 背景同步
+  // 有權限、有開雲端同步的系統，放在看不到的小框架裡執行：它們會自己跟雲端同步（冰箱、菜品每 15 秒，備料每 10 秒），
+  // 存到這台裝置；首頁每 10 秒看資料有沒有變，有變就更新數字。別台（例如管理者）改了資料，不用重新打開就會出現。
+  const BG = {};
+  function bgFrames(d) {
+    if (DESK || !location.protocol.startsWith('http')) return;
+    const s = AUTH.get();
+    const want = {
+      fridge: AUTH.can('fridge') && !!(d.fridge && d.fridge.cloud && d.fridge.cloud.on),
+      dish: AUTH.can('dish') && !!(d.dish && d.dish.cloud && d.dish.cloud.on),
+      prep: AUTH.can('prep') && !!AUTH.url && !!(s && s.token),
+    };
+    for (const [m, on] of Object.entries(want)) {
+      if (on && !BG[m]) {
+        const f = document.createElement('iframe');
+        f.src = `${m}/index.html?bg=1`; f.className = 'bg-sync'; f.tabIndex = -1;
+        f.setAttribute('aria-hidden', 'true'); f.title = '背景同步';
+        document.body.append(f); BG[m] = f;
+      } else if (!on && BG[m]) { BG[m].remove(); delete BG[m]; }
+    }
+  }
+  // 只比資料本身（不比同步時間），沒變就不重畫
+  const snapOf = (d) => [d.fridge, d.dish, d.prep].map((x) => (x ? JSON.stringify(x, (k, v) => (k === 'cloud' || k === '_sync' || k === 'meAct' ? undefined : v)) : '-')).join('|');
+  async function watchLocal() {
+    if (document.hidden || $('.adm, .auth-screen, .modal-bg')) return;
+    try { const d = await loadLocal(); if (snapOf(d) !== snap) render(); } catch (e) { /* */ }
+    if (AUTH.can('meal')) fetchMeal();
+  }
+  setInterval(watchLocal, 10 * 1000);
   async function render(force) {
     const now = new Date();
     $('#today').textContent = `${now.getFullYear()}/${now.getMonth() + 1}/${now.getDate()}（${WD[now.getDay()]}）`;
@@ -321,6 +350,8 @@
         : '<br>冰箱、菜品的資料存在這台裝置，並可各自在設定頁連線 Google 雲端同步；員工餐的資料在 Google 試算表，跟電腦版同一份。');
     window.__kitchen.summary = { fridge: fs, dish: ds, meal: ms, prep: ps };
     if (AUTH.can('meal')) fetchMeal(force);
+    snap = snapOf(d);
+    bgFrames(d);
   }
 
   document.addEventListener('click', async (e) => {
