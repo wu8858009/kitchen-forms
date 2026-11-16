@@ -1,7 +1,7 @@
 /* 廚房專用表格系統 — 首頁儀表板：冰箱溫度、備料交接、菜品銷售、員工餐四個系統的入口與今日重點 */
 (() => {
   'use strict';
-  const VERSION = '1.11.0';
+  const VERSION = '1.12.0';
   const DESK = new URLSearchParams(location.search).has('desktop');
   const Q = DESK ? '?desktop=1' : '';
   const $ = (s, r = document) => r.querySelector(s);
@@ -338,6 +338,31 @@
       `<a class="btn" href="equip/index.html${Q}" data-mod="equip">開啟</a><a class="btn sub" href="equip/index.html${Q}#/plans" data-mod="equip">保養</a>`);
   }
 
+  // ------------------------------------------------------------------ 今日重點（首頁最上面）
+  function heroHtml(now, S) {
+    const h = now.getHours();
+    const hi = h < 5 ? '夜深了' : h < 11 ? '早安' : h < 14 ? '午安' : h < 18 ? '下午好' : '晚安';
+    const s = AUTH.get(), name = AUTH.on && s && s.me ? s.me.name : '';
+    const pill = (m, ic, label, val, cls) => (AUTH.can(m) ? `<a class="hp ${cls || ''}" href="${m}/index.html${Q}" data-mod="${m}"><span class="hp-i">${ic}</span><span class="hp-t"><small>${label}</small><b>${val}</b></span></a>` : '');
+    const p = [];
+    const f = S.fridge;
+    if (f && f.total) p.push(pill('fridge', '🌡️', '冰箱溫度', f.bad ? `${f.bad} 筆超溫` : `${f.done}/${f.total} 已記錄`, f.bad ? 'bad' : f.missing ? 'warn' : f.done >= f.total ? 'ok' : ''));
+    const pr = S.prep;
+    if (pr && pr.total) p.push(pill('prep', '📋', '今日備料', `${pr.done}/${pr.total}`, pr.done >= pr.total ? 'ok' : ''));
+    const d = S.dish;
+    if (d) p.push(pill('dish', '🍱', '今日銷售', '$' + money(d.t.amt || 0), ''));
+    const ml = S.meal;
+    if (ml) p.push(pill('meal', '🍚', '員工餐剩餘', '$' + money(ml.remain), ml.remain < 0 || ml.pct >= ml.danger ? 'bad' : ml.pct >= ml.warn ? 'warn' : 'ok'));
+    const so = S.sop;
+    if (so && so.sched) p.push(pill('sop', '📖', '今日行程', `${so.schedDone}/${so.sched}`, so.schedDone >= so.sched ? 'ok' : ''));
+    const e = S.equip;
+    if (e && e.users) p.push(pill('equip', '🔧', '設備保養', e.overdue ? `${e.overdue} 項逾期` : e.soon ? `${e.soon} 項快到` : '都正常', e.overdue ? 'bad' : e.soon ? 'warn' : 'ok'));
+    const pills = p.filter(Boolean);
+    return `<div class="hero-t"><div><h1>${hi}${name ? '，' + esc(name) : ''} <span class="wave">👋</span></h1>
+        <p>${now.getMonth() + 1} 月 ${now.getDate()} 日　星期${WD[now.getDay()]}${pills.length ? '　・　今天的重點' : ''}</p></div></div>
+      ${pills.length ? `<div class="hero-p">${pills.join('')}</div>` : ''}`;
+  }
+
   function card(cls, ic, title, sub, body, foot) {
     return `<article class="card ${cls}" data-mod="${cls}"><div class="card-h"><div class="ic">${ic}</div><h2>${title}<small>${sub}</small></h2><button class="drag" type="button" aria-label="拖曳調整順序" title="按住拖曳，調整卡片順序">⠿</button></div>
       <div class="card-b">${body}</div><div class="card-f">${foot}</div></article>`;
@@ -359,7 +384,7 @@
   try { const n = sessionStorage.getItem('kitchenforms-notice'); if (n) { sessionStorage.removeItem('kitchenforms-notice'); setTimeout(() => toast(n, 4500), 600); } } catch (e) { /* */ }
 
   // ------------------------------------------------------------------ 畫面
-  let last = null, snap = '', cardsHtml = '', footHtml = '', changedAt = null;
+  let last = null, snap = '', cardsHtml = '', footHtml = '', changedAt = null, heroCache = '';
   // ------------------------------------------------------------------ 背景同步
   // 有權限、有開雲端同步的系統，放在看不到的小框架裡執行：它們會自己跟雲端同步（冰箱、菜品每 15 秒，備料每 10 秒），
   // 存到這台裝置；首頁每 10 秒看資料有沒有變，有變就更新數字。別台（例如管理者）改了資料，不用重新打開就會出現。
@@ -496,6 +521,9 @@
     cards.forEach((c, i) => { c[2] = at(c[0], i); }); cards.sort((a, b) => a[2] - b[2]);
     const html = cards.map(([, f]) => f()).join('')
       || `<div class="no-perm">🔒 你目前沒有任何系統的權限。<br>請管理者在「人員與權限」幫你勾選可以使用的系統。</div>`;
+    const hh = heroHtml(now, { fridge: fs, prep: ps, dish: ds, meal: ms, sop: ss, equip: es });
+    const hero = $('#hero');
+    if (hero && heroCache !== hh) { hero.innerHTML = hh; hero.hidden = false; heroCache = hh; }
     // 只有內容真的變了才重畫（沒改資料就不會閃一下）
     if (html !== cardsHtml || !$('#cards .card, #cards .no-perm')) { $('#cards').innerHTML = html; cardsHtml = html; changedAt = now; }
     if (!changedAt) changedAt = now;
