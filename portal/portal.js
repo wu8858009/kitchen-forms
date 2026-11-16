@@ -231,22 +231,22 @@
         t++; if (L.q[it.id] && String(L.q[it.id].v || '').trim()) n++;
       });
       total += t; done += n;
-      return { name: s.name, t, n };
+      return { name: s.name || db.items.filter((it) => !it.deleted && it.st === s.id).slice(0, 2).map((it) => it.name).join('・'), t, n };
     });
-    const notes = Object.values(L.notes || {}).filter((x) => String(x).trim()).length;
+    const notes = Object.values(L.shift || L.notes || {}).filter((x) => String(x).trim()).length;
     return { total, done, per, hol, sign: (L.sign || '').trim(), notes };
   }
   function prepCard(s) {
     let body;
-    if (!s) body = '<p class="note">紙本「備料交接日誌」的電子版：各站區今天要備的品項、備料量、交接事項，可列印 A4 交接表。點「開啟」開始使用。</p>';
+    if (!s) body = '<p class="note">紙本「碧水堂廚房交接表」的電子版：時程、站區分配、交接事項、預估銷售量，可列印 A4 交接表。點「開啟」開始使用。</p>';
     else body = `<div class="kpis">
           <div class="kpi ${s.done >= s.total && s.total ? 'ok' : 'warn'}"><div class="l">今日備料完成</div><div class="v">${s.done}<small> / ${s.total}</small></div></div>
           <div class="kpi"><div class="l">份量</div><div class="v">${s.hol ? '假日' : '平日'}</div></div>
           <div class="kpi ${s.sign ? 'ok' : ''}"><div class="l">主管簽名</div><div class="v">${s.sign ? esc(s.sign) : '<small>未簽</small>'}</div></div>
         </div>
         <div class="chips">${s.per.filter((p) => p.t).map((p) => `<span class="chip ${p.n >= p.t ? 'ok' : p.n ? 'warn' : ''}">${esc(p.name)}　${p.n}/${p.t}</span>`).join('')}</div>
-        ${s.notes ? `<p class="note">今天有 ${s.notes} 個站區寫了交接事項</p>` : ''}`;
-    return card('prep', '📋', '備料交接日誌', '各站區備料・交接事項・列印交接表', body,
+        ${s.notes ? `<p class="note">今天有 ${s.notes} 個時段寫了交接</p>` : ''}`;
+    return card('prep', '📋', '備料交接日誌', '時程・站區分配・預估銷售量・列印交接表', body,
       `<a class="btn" href="prep/index.html${Q}#/day" data-mod="prep">開啟</a><a class="btn sub" href="prep/index.html${Q}#/sheet" data-mod="prep">列印</a>`);
   }
 

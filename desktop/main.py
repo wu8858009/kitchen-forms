@@ -322,7 +322,7 @@ def _selftest(out_path):
         pdfs = []
         for _ in range(40):
             time.sleep(0.5)
-            pdfs = [p for p in exp.glob("*備料交接*.pdf") if p.stat().st_size > 10000]
+            pdfs = [p for p in exp.glob("*交接*.pdf") if p.stat().st_size > 10000]
             if pdfs:
                 break
         result["prep_pdf"] = [[p.name, p.stat().st_size, p.read_bytes().count(b"/Type /Page\n")] for p in pdfs]
