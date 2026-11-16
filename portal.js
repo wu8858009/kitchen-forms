@@ -1,7 +1,7 @@
 /* 廚房專用表格系統 — 首頁儀表板：冰箱溫度、備料交接、菜品銷售、員工餐四個系統的入口與今日重點 */
 (() => {
   'use strict';
-  const VERSION = '1.4.1';
+  const VERSION = '1.5.0';
   const DESK = new URLSearchParams(location.search).has('desktop');
   const Q = DESK ? '?desktop=1' : '';
   const $ = (s, r = document) => r.querySelector(s);
@@ -289,8 +289,11 @@
     const s = AUTH.get();
     b.classList.toggle('on', AUTH.on && !!(s && s.me));
     if (s && s.me) b.textContent = `👤 ${s.me.name}`;
+    // 雲端同步設定：管理者（沒啟用權限管理時，或桌面版，大家都可以）
+    $('#cloudbtn').classList.toggle('on', !AUTH.on || AUTH.isAdmin());
   }
   $('#who').addEventListener('click', () => AUI.openMenu());
+  $('#cloudbtn').addEventListener('click', () => window.KitchenCloud.open());
   AUI.onChange = () => render();
 
   // ------------------------------------------------------------------ 畫面

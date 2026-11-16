@@ -160,6 +160,7 @@
       <p class="am-perm">${Object.keys(A.MODS).map((m) => `<span class="${me.perms[m] ? 'y' : 'n'}">${ICON[m]} ${SHORT[m]}</span>`).join('')}</p>
       <div class="am-list">
         ${me.role === 'admin' ? '<button data-a="admin">👥 人員與權限管理</button>' : ''}
+        ${me.role === 'admin' ? '<button data-a="cloud">☁️ Google 雲端同步設定</button>' : ''}
         <button data-a="pin">🔑 修改我的 PIN</button>
         <button data-a="out" class="danger">⏻ 登出（換人使用）</button>
       </div><div class="row"><button class="sec" data-x="close">關閉</button></div>`);
@@ -167,6 +168,7 @@
       const a = e.target.closest('[data-a]'); if (!a) return;
       bg.remove();
       if (a.dataset.a === 'admin') openAdmin();
+      if (a.dataset.a === 'cloud') window.KitchenCloud.open();
       if (a.dataset.a === 'pin') changePin();
       if (a.dataset.a === 'out') {
         if (!confirm('登出這台裝置？')) return;
