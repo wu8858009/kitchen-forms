@@ -117,31 +117,22 @@
   }
 
   // 背景確認權限有沒有被改（被停用、刪除就回到登入畫面）
-  let lastCheck = 0;
-  async function refresh(force) {
-    const s = A.get();
-    if (!A.on || !s || !s.token) return;
-    if (!force && Date.now() - lastCheck < 60 * 1000) return;
-    lastCheck = Date.now();
-    let r;
-    try { r = await A.call('me', { token: s.token }); } catch (e) { return; } // 沒網路：沿用這台裝置記得的權限
-    if (r.ok) {
-      const changed = JSON.stringify(r.me) !== JSON.stringify(s.me);
-      s.me = r.me; s.at = Date.now(); A.set(s);
-      if (changed) { toast('你的權限已更新'); onChange(); }
-    } else if (r.code === 'auth') {
-      A.set({ last: s.me && s.me.name });
-      toast(r.error || '請重新登入', 4000);
-      await showLogin(); onChange();
+  // 權限檢查交給 KitchenAuth.watch（每 15 秒、切回 App 時）；這裡負責首頁怎麼反應
+  async function refresh() { await A.check(); }
+  A.watch(async (kind, msg) => {
+    if (kind === 'perm') { toast('你的權限已更新'); onChange(); }
+    else if (kind === 'out') { toast(msg, 4000); if (adm) { adm.remove(); adm = null; } await showLogin(); onChange(); }
+    else if (kind === 'storage') {
+      const s = A.get();
+      if (!s || !s.token) { await showLogin(); }
+      onChange();
     }
-  }
+  });
   async function ensure() {
     if (!A.on) return null;
     const s = A.get();
-    if (s && s.token && s.me) { refresh(); return s.me; }
-    const me = await showLogin();
-    lastCheck = Date.now();
-    return me;
+    if (s && s.token && s.me) return s.me;
+    return showLogin();
   }
 
   // ------------------------------------------------------------------ 帳號選單

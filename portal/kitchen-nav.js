@@ -6,6 +6,16 @@
   // 權限：沒有這個系統權限（或還沒登入）就回首頁
   const mod = (location.pathname.match(/\/(fridge|prep|dish|meal)\//) || [])[1];
   if (mod && window.KitchenAuth && !window.KitchenAuth.can(mod)) { location.replace(home); return; }
+  // 開著的時候權限被取消、帳號被停用：存好資料再回首頁
+  if (mod && window.KitchenAuth && window.KitchenAuth.on) {
+    window.KitchenAuth.watch(async () => {
+      if (window.KitchenAuth.can(mod)) return;
+      const m = window.__fridge || window.__dish || window.__meal || window.__prep;
+      try { if (m && m.flush) await Promise.race([m.flush(), new Promise((r) => setTimeout(r, 3000))]); } catch (err) { /* 照樣回首頁 */ }
+      try { sessionStorage.setItem('kitchenforms-notice', '你的權限已變更，這個系統目前不能使用'); } catch (err) { /* */ }
+      location.replace(home);
+    });
+  }
   const st = document.createElement('style');
   st.textContent = `.kn-home{display:inline-flex;align-items:center;gap:4px;flex:none;margin-right:8px;padding:5px 10px;border-radius:8px;
     background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.3);color:#fff;text-decoration:none;font-size:14px;font-weight:700;white-space:nowrap}
