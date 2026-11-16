@@ -1,7 +1,7 @@
 /* 廚房專用表格系統 — 首頁儀表板：冰箱溫度、備料交接、菜品銷售、員工餐四個系統的入口與今日重點 */
 (() => {
   'use strict';
-  const VERSION = '1.3.0';
+  const VERSION = '1.4.0';
   const DESK = new URLSearchParams(location.search).has('desktop');
   const Q = DESK ? '?desktop=1' : '';
   const $ = (s, r = document) => r.querySelector(s);
@@ -282,11 +282,24 @@
       <div class="card-b">${body}</div><div class="card-f">${foot}</div></article>`;
   }
 
+  // ------------------------------------------------------------------ 人員權限
+  const AUTH = window.KitchenAuth, AUI = window.KitchenAuthUI;
+  function paintWho() {
+    const b = $('#who'); if (!b) return;
+    const s = AUTH.get();
+    b.classList.toggle('on', AUTH.on && !!(s && s.me));
+    if (s && s.me) b.textContent = `👤 ${s.me.name}`;
+  }
+  $('#who').addEventListener('click', () => AUI.openMenu());
+  AUI.onChange = () => render();
+
   // ------------------------------------------------------------------ 畫面
   let last = null;
   async function render(force) {
     const now = new Date();
     $('#today').textContent = `${now.getFullYear()}/${now.getMonth() + 1}/${now.getDate()}（${WD[now.getDay()]}）`;
+    if (AUTH.on) { await AUI.ensure(); if (force) AUI.refresh(true); }
+    paintWho();
     let d;
     try { d = await loadLocal(); } catch (e) { d = {}; }
     last = d;
@@ -295,12 +308,15 @@
     const mi = DESK ? (d.mealInfo || {}) : { error: meal.error, loading: meal.loading || (!meal.fetched && !!mealConf().pw), at: meal.at, pw: !!mealConf().pw };
     const shop = (fs && fs.shop) || (ds && ds.shop) || '';
     $('#shop').textContent = shop ? `${shop}・廚房表格` : '廚房專用表格系統';
-    $('#cards').innerHTML = fridgeCard(fs) + prepCard(ps) + dishCard(ds) + mealCard(ms, mi);
+    // 只顯示這個人有權限的系統
+    const cards = [['fridge', () => fridgeCard(fs)], ['prep', () => prepCard(ps)], ['dish', () => dishCard(ds)], ['meal', () => mealCard(ms, mi)]].filter(([m]) => AUTH.can(m));
+    $('#cards').innerHTML = cards.map(([, f]) => f()).join('')
+      || `<div class="no-perm">🔒 你目前沒有任何系統的權限。<br>請管理者在「人員與權限」幫你勾選可以使用的系統。</div>`;
     $('#foot').innerHTML = `廚房專用表格系統 v${VERSION}${DESK ? '（桌面版）' : ''}・更新於 ${pad(now.getHours())}:${pad(now.getMinutes())}`
       + (DESK ? '<br>冰箱、菜品的資料與原本的單獨程式共用同一份（%APPDATA%），雲端同步設定也沿用；員工餐的資料在 Google 試算表，跟電腦版同一份。'
         : '<br>冰箱、菜品的資料存在這台裝置，並可各自在設定頁連線 Google 雲端同步；員工餐的資料在 Google 試算表，跟電腦版同一份。');
     window.__kitchen.summary = { fridge: fs, dish: ds, meal: ms, prep: ps };
-    fetchMeal(force);
+    if (AUTH.can('meal')) fetchMeal(force);
   }
 
   document.addEventListener('click', async (e) => {
@@ -319,7 +335,7 @@
   $('#refresh').addEventListener('click', () => { render(true).then(() => toast('已更新')); });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'F5') { e.preventDefault(); render(); }
-    if (e.altKey && ['1', '2', '3', '4'].includes(e.key)) { e.preventDefault(); location.href = ({ 1: 'fridge', 2: 'dish', 3: 'meal', 4: 'prep' })[e.key] + `/index.html${Q}`; }
+    if (e.altKey && ['1', '2', '3', '4'].includes(e.key)) { e.preventDefault(); const m = ({ 1: 'fridge', 2: 'dish', 3: 'meal', 4: 'prep' })[e.key]; if (AUTH.can(m)) location.href = m + `/index.html${Q}`; else toast('你沒有這個系統的權限'); }
   });
   // 從各系統回到首頁、或切回這個視窗時更新數字
   document.addEventListener('visibilitychange', () => { if (!document.hidden) render(); });
