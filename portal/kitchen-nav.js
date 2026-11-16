@@ -108,6 +108,42 @@
       location.reload(); // 設備管家重新開啟時就直接進去了
     })().catch(done);
   }
+  // 水電瓦斯抄表：不用它自己的登入畫面，用管理者在首頁「雲端同步」分發的帳號自動登入
+  // （雲端回 401 時，build_web.py 加的小程式會發出 kf-energy-401；沒有分發帳號就照原本的登入畫面）
+  function energyAuto() {
+    let want = null;
+    try { want = (JSON.parse(localStorage.getItem('kitchenforms-cloud')) || {}).energy || null; } catch (e) { want = null; }
+    if (!want || want.off || !want.user || !want.pw) return;
+    const hide = document.createElement('style');
+    hide.textContent = '#loginOverlay{visibility:hidden!important} #mLogout{display:none!important}';
+    document.head.append(hide);
+    const show = () => { hide.textContent = '#mLogout{display:none!important}'; };
+    const ov = document.getElementById('loginOverlay');
+    if (!ov) return show();
+    let tries = 0, busy = false;
+    async function login() {
+      if (busy) return;
+      if (++tries > 2) { show(); return; } // 帳號密碼不對：顯示原本的登入畫面（裡面有錯誤訊息）
+      busy = true;
+      await new Promise((r) => setTimeout(r, 80)); // 讓它自己先把登入畫面準備好
+      const u = document.getElementById('loginUsername'), p = document.getElementById('loginPassword'), f = document.getElementById('loginForm');
+      if (!u || !p || !f) { busy = false; show(); return; }
+      let last = null; try { last = localStorage.getItem('bitan_last_username_v1'); } catch (e) { /* */ }
+      const rem = document.getElementById('loginRemember'); if (rem) rem.checked = !!last;
+      u.value = want.user; p.value = want.pw;
+      if (f.requestSubmit) f.requestSubmit(); else f.dispatchEvent(new Event('submit', { cancelable: true }));
+      p.value = '';
+      const err = document.getElementById('loginError');
+      for (let i = 0; i < 150 && ov.classList.contains('open') && !(err && err.classList.contains('show')); i++) await new Promise((r) => setTimeout(r, 200));
+      try { if (last == null) localStorage.removeItem('bitan_last_username_v1'); else localStorage.setItem('bitan_last_username_v1', last); } catch (e) { /* 不動原本記住的帳號 */ }
+      busy = false;
+      if (ov.classList.contains('open')) { tries = 9; show(); } else tries = 0; // 登入失敗（密碼被改了等）：馬上顯示原本的登入畫面
+    }
+    window.addEventListener('kf-energy-401', login);
+    if (window.__kfE401 && ov.classList.contains('open')) login();
+    // 已經登入過的：它自己會關掉登入畫面；20 秒都沒有反應（例如沒網路）就顯示原本的畫面
+    setTimeout(() => { if (ov.classList.contains('open') && !busy) show(); }, 20000);
+  }
   // 首頁的背景同步框架（看不到的小框架）：只負責同步，不放按鈕、不跳轉、不連線設定
   let BG = false;
   try { BG = window.top !== window; } catch (e) { BG = true; }
@@ -183,6 +219,7 @@
   placeHome();
   if (mod === 'equip' || mod === 'energy') {
     if (mod === 'equip') equipAuto();
+    if (mod === 'energy') energyAuto();
     let qd = 0;
     new MutationObserver(() => { if (!qd) qd = requestAnimationFrame(() => { qd = 0; placeHome(); if (mod === 'equip' && document.querySelector('.auth') && window.SG && SG.auth && !SG.auth.current) equipAuto(); }); }).observe(document.body, { childList: true, subtree: true });
   }

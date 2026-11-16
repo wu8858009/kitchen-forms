@@ -22,7 +22,7 @@ MODULES = {
 # 只複製網頁需要的檔案（沒列的系統整個資料夾都複製）
 ONLY = {"equip": ["index.html", "manifest.webmanifest", "sw.js", "css", "js", "icons"], "energy": ["index.html", "manifest.json", "icons"]}
 # auth.js：人員權限（沒有權限的人由 kitchen-nav.js 送回首頁）
-NAV_TAG = '<script src="../auth.js?v=9"></script>\n<script src="../kitchen-nav.js?v=14"></script>'
+NAV_TAG = '<script src="../auth.js?v=10"></script>\n<script src="../kitchen-nav.js?v=15"></script>'
 # 統一暗色配色：在 <html> 標上 kf-dark kf-<系統>，再載入共用主題（要在各系統自己的樣式之後才蓋得過去）；
 # 設備管家、冰箱、菜品另外固定用它們自己的暗色模式（data-theme=dark）
 THEME_TAG = (
@@ -34,7 +34,12 @@ THEME_TAG = (
     'if(m==="energy"){var e=function(){var b=document.body;if(!b)return;b.classList.add("dark-mode");'
     'new MutationObserver(function(){if(!b.classList.contains("dark-mode"))b.classList.add("dark-mode");})'
     '.observe(b,{attributes:true,attributeFilter:["class"]});};'
-    'if(document.body)e();else document.addEventListener("DOMContentLoaded",e);}})();</script>\n'
+    'if(document.body)e();else document.addEventListener("DOMContentLoaded",e);'
+    # 雲端回「要登入」(401) 時通知 kitchen-nav.js 用管理者分發的帳號自動登入（不用它的登入畫面）
+    'var of=window.fetch;window.fetch=function(u,o){var p=of.apply(this,arguments);'
+    'try{if(String(u).indexOf("script.google.com")>=0&&o&&typeof o.body==="string"&&o.body.indexOf("\\"p\\":")>=0){'
+    'p.then(function(r){r.clone().json().then(function(j){if(j&&j.s===401){window.__kfE401=1;window.dispatchEvent(new Event("kf-energy-401"));}})["catch"](function(){});})["catch"](function(){});}}catch(x){}'
+    'return p;};}})();</script>\n'
     '<link rel="stylesheet" href="../kitchen-theme.css?v=4">'
 )
 
