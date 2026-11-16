@@ -1,7 +1,7 @@
 /* 廚房專用表格系統 — 首頁儀表板：冰箱溫度、備料交接、菜品銷售、員工餐四個系統的入口與今日重點 */
 (() => {
   'use strict';
-  const VERSION = '1.5.0';
+  const VERSION = '1.5.1';
   const DESK = new URLSearchParams(location.search).has('desktop');
   const Q = DESK ? '?desktop=1' : '';
   const $ = (s, r = document) => r.querySelector(s);
@@ -295,13 +295,14 @@
   $('#who').addEventListener('click', () => AUI.openMenu());
   $('#cloudbtn').addEventListener('click', () => window.KitchenCloud.open());
   AUI.onChange = () => render();
+  try { const n = sessionStorage.getItem('kitchenforms-notice'); if (n) { sessionStorage.removeItem('kitchenforms-notice'); setTimeout(() => toast(n, 4500), 600); } } catch (e) { /* */ }
 
   // ------------------------------------------------------------------ 畫面
   let last = null;
   async function render(force) {
     const now = new Date();
     $('#today').textContent = `${now.getFullYear()}/${now.getMonth() + 1}/${now.getDate()}（${WD[now.getDay()]}）`;
-    if (AUTH.on) { await AUI.ensure(); if (force) AUI.refresh(true); }
+    if (AUTH.on) { await AUI.ensure(); if (force) AUI.refresh(); }
     paintWho();
     let d;
     try { d = await loadLocal(); } catch (e) { d = {}; }

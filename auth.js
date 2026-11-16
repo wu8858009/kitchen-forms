@@ -40,5 +40,39 @@
       throw new Error(e && e.name === 'AbortError' ? '雲端回應太慢，請再試一次' : '連不上雲端，請確認網路');
     } finally { clearTimeout(t); }
   }
-  window.KitchenAuth = { get on() { return !!url && !DESK; }, url, MODS, get, set, clear, can, isAdmin, call, dev };
+  // ------------------------------------------------------------------ 即時檢查權限
+  // 畫面開著時每 15 秒、切回 App 時馬上跟雲端確認一次：權限改了、被停用或刪除，馬上套用（首頁和各系統頁面都會）
+  const subs = [];
+  let busy = false, timer = 0;
+  async function check() {
+    if (!url || DESK || busy) return;
+    const s = get();
+    if (!s || !s.token) return;
+    busy = true;
+    try {
+      const r = await call('me', { token: s.token });
+      const cur = get();
+      if (!cur || cur.token !== s.token) return; // 這段時間換人登入了
+      if (r.ok) {
+        const changed = JSON.stringify(r.me) !== JSON.stringify(cur.me);
+        cur.me = r.me; cur.at = Date.now(); set(cur);
+        if (changed) subs.forEach((f) => f('perm'));
+      } else if (r.code === 'auth') {
+        set({ last: cur.me && cur.me.name });
+        subs.forEach((f) => f('out', r.error || '請重新登入'));
+      }
+    } catch (e) { /* 沒網路：沿用這台裝置記得的權限 */ } finally { busy = false; }
+  }
+  function watch(f) {
+    subs.push(f);
+    if (timer || !url || DESK) return;
+    timer = setInterval(() => { if (!document.hidden) check(); }, 15000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
+    window.addEventListener('online', check);
+    window.addEventListener('pageshow', (e) => { if (e.persisted) check(); });
+    // 同一台裝置的其他分頁登出、換人
+    window.addEventListener('storage', (e) => { if (e.key === LS) subs.forEach((g) => g('storage')); });
+    setTimeout(check, 1200);
+  }
+  window.KitchenAuth = { get on() { return !!url && !DESK; }, url, MODS, get, set, clear, can, isAdmin, call, dev, check, watch };
 })();
