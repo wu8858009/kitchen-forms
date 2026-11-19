@@ -492,6 +492,19 @@ def _selftest(out_path):
             const ins = document.querySelectorAll('[data-t]');
             ins[0].value = '3.5'; ins[0].dispatchEvent(new Event('change', {bubbles: true})); })()""")
         time.sleep(0.6)
+        # 冰箱月報表：中越雙語 PDF（桌面版直接另存）
+        js("window.__fridge.flush(); location.hash = '#/month'")
+        time.sleep(1.0)
+        result["fridge_sheet_vi"] = js("(document.querySelector('.sheet .sh-vi') || {}).textContent || ''")
+        js("document.querySelector('[data-act=print]').click()")
+        exp = Path(os.environ.get("KITCHEN_EXPORT_DIR", "."))
+        fpdfs = []
+        for _ in range(40):
+            time.sleep(0.5)
+            fpdfs = [p for p in exp.glob("*冰箱溫度記錄表*.pdf") if p.stat().st_size > 10000]
+            if fpdfs:
+                break
+        result["fridge_pdf"] = [[p.name, p.stat().st_size, p.read_bytes().count(b"/Type /Page\n")] for p in fpdfs]
         js("document.querySelector('.kn-home').click()")
         result["back_home_1"] = wait("window.__kitchen && window.__kitchen.summary && window.__kitchen.summary.fridge ? 1 : 0")
         result["fridge_summary"] = js("JSON.stringify(window.__kitchen.summary.fridge)")
@@ -558,7 +571,7 @@ def _selftest(out_path):
         ds = json.loads(result["dish_summary"] or "null") or {}
         ps = json.loads(result.get("prep_summary") or "null") or {}
         result["ok"] = bool(result["home_cards"] == 7 and ps.get("done", 0) >= 2 and ps.get("sign") and result["prep_pdf"] and result["prep_saved"] and result["fridge_loaded"] and result["fridge_home_btn"]
-                            and result["fridge_saved_today"] and fs.get("done", 0) >= 1
+                            and result["fridge_saved_today"] and fs.get("done", 0) >= 1 and result["fridge_pdf"] and result["fridge_sheet_vi"]
                             and result["dish_loaded"] and ds.get("t", {}).get("q", 0) >= 3
                             and result["sop_recipes"] and result["sop_saved"] and result["sop_home_btn"] and result["back_home_4"]
                             and result["equip_desktop"] and result["equip_saved"] and result["equip_home_btn"] and result["back_home_5"])
