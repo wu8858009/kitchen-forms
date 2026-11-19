@@ -299,7 +299,12 @@ tbody tr:last-child td { border-bottom: 0; }
   width: 100%; max-width: 800px; background: #fff; color: #111; padding: 22px 26px; border-radius: 4px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, .12), 0 4px 16px rgba(0, 0, 0, .06); font-size: 12.5px; overflow-x: auto;
 }
-.sh-head h2 { text-align: center; font-size: 20px; letter-spacing: .08em; margin-bottom: 8px; }
+.sh-head h2 { text-align: center; font-size: 20px; letter-spacing: .08em; margin-bottom: 2px; }
+.sh-vi { text-align: center; font-size: 13px; color: #444; margin: 0 0 8px; }
+.sheet .vi { display: block; font-size: .78em; font-weight: 400; color: #555; line-height: 1.2; white-space: nowrap; }
+.sheet .vi-i { font-size: .78em; font-weight: 400; color: #666; margin-left: .3em; white-space: nowrap; }
+.sh-tbl td .vi-i { font-size: .72em; margin-left: .15em; }
+.sh-tbl tr.we td .vi-i { color: inherit; }
 .sh-info { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 16px; margin-bottom: 8px; font-size: 13px; }
 .sh-tbl { border-collapse: collapse; width: 100%; }
 .sh-tbl th, .sh-tbl td { border: 1px solid #555; padding: 2px 5px; height: 21px; color: #111; background: none; font-size: 12px; white-space: nowrap; }
@@ -654,7 +659,8 @@ body.kp-open .fab { display: none; }
 
 /* ---- PDF 滿版：字級依 --pf 自動放大縮小，列高 --rh 撐滿 A4 ---- */
 .pdf-render .sheet.fit { width: 718px; height: auto; margin: 0; font-size: calc(var(--pf, 12) * 1px); display: flex; flex-direction: column; }
-.pdf-render .sheet.fit .sh-head h2 { font-size: 1.75em; margin-bottom: .4em; }
+.pdf-render .sheet.fit .sh-head h2 { font-size: 1.75em; margin-bottom: .1em; }
+.pdf-render .sheet.fit .sh-vi { font-size: 1.05em; margin-bottom: .45em; }
 .pdf-render .sheet.fit .sh-info { font-size: 1.1em; margin-bottom: .45em; }
 .pdf-render .sheet.fit .sh-std { font-size: .95em; margin-bottom: .4em; }
 .pdf-render .sheet.fit .sh-tbl th, .pdf-render .sheet.fit .sh-tbl td { font-size: 1em; padding: .12em .3em; height: auto; line-height: 1.25; }

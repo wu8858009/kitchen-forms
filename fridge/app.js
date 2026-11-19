@@ -1,7 +1,7 @@
 /* 冰箱溫度記錄表系統 — 每日溫度記錄、超溫處置、月報表、趨勢圖（PWA 與桌面版共用） */
 (() => {
   'use strict';
-  const VERSION = '1.6.4';
+  const VERSION = '1.7.0';
   const DESK = new URLSearchParams(location.search).has('desktop');
 
   // ------------------------------------------------------------------ 工具
@@ -867,23 +867,51 @@
       }),
     };
   }
+  // 月報表越南文（中文下方／旁邊加越南文；設備名稱、記錄人等使用者資料不翻）
+  const VI = {
+    title: 'Bảng ghi nhiệt độ tủ lạnh', dev: 'Thiết bị', std: 'Nhiệt độ chuẩn', area: 'Khu vực',
+    date: 'Ngày', wd: 'Thứ', temp: 'Nhiệt độ', by: 'Người ghi', late: 'ghi bù', unit: 'thiết bị',
+    wds: ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'],
+    types: { chill: 'Ngăn mát', freeze: 'Ngăn đông', hot: 'Giữ nóng', other: 'Khác' },
+  };
+  // 常見時段名稱（只有完全符合才加越南文）
+  const SLOT_VI = {
+    早: 'Sáng', 早上: 'Sáng', 早班: 'Ca sáng', 上午: 'Buổi sáng', 中午: 'Trưa', 午: 'Trưa', 午班: 'Ca trưa', 下午: 'Chiều',
+    晚: 'Tối', 晚上: 'Tối', 晚班: 'Ca tối', 傍晚: 'Chiều tối', 夜: 'Đêm', 夜班: 'Ca đêm', 宵夜: 'Khuya',
+    開店: 'Mở cửa', 開店前: 'Trước khi mở cửa', 打烊: 'Đóng cửa', 打烊前: 'Trước khi đóng cửa', 關店: 'Đóng cửa', 收班: 'Hết ca',
+  };
+  const viB = (t) => `<span class="vi">${t}</span>`; // 下方一行
+  const viI = (t) => `<span class="vi-i">${t}</span>`; // 旁邊小字
+  const slotVi = (s) => { const v = SLOT_VI[String(s.name || '').trim()]; return v ? viB(v) : ''; };
+  const typeVi = (f) => VI.types[f.type] || VI.types.other;
+  function rangeVi(f) {
+    f = bounds(f);
+    if (f.lo != null && f.hi != null) return '';
+    if (f.hi != null) return `dưới ${f.hi}°C`;
+    if (f.lo != null) return `từ ${f.lo}°C trở lên`;
+    return 'Chưa thiết lập';
+  }
+  const ymVi = (y, m) => `<b>${y}</b> 年 <b>${+m}</b> 月${viI(`Tháng ${+m}/${y}`)}`;
+  const lateMark = `<small>補${viI(VI.late)}</small>`;
   function sheetHtml(M, S) {
     const f = S.f, [y, m] = M.ym.split('-');
     const name = db.shop || '';
+    const rv = rangeVi(f);
     return `<article class="sheet">
       <header class="sh-head">
         <h2>${esc(name)}${name ? ' ' : ''}冰箱溫度記錄表</h2>
-        <div class="sh-info"><span>設備：<b>${esc(f.name)}</b>（${typeName(f)}）</span><span>標準溫度：<b>${esc(rangeText(f))}</b></span><span><b>${y}</b> 年 <b>${+m}</b> 月</span></div>
+        <p class="sh-vi">${VI.title}</p>
+        <div class="sh-info"><span>設備${viI(VI.dev)}：<b>${esc(f.name)}</b>（${typeName(f)}${viI(typeVi(f))}）</span><span>標準溫度${viI(VI.std)}：<b>${esc(rangeText(f))}</b>${rv ? viI(rv) : ''}</span><span>${ymVi(y, m)}</span></div>
       </header>
       <table class="sh-tbl">
         <thead>
-          <tr><th rowspan="2" class="c">日期</th><th rowspan="2" class="c">星期</th>${M.slots.map((s) => `<th colspan="2" class="c">${esc(s.name)}${s.time ? `<small> ${esc(s.time)}</small>` : ''}</th>`).join('')}</tr>
-          <tr>${M.slots.map(() => '<th class="c">溫度</th><th class="c">記錄人</th>').join('')}</tr>
+          <tr><th rowspan="2" class="c">日期${viB(VI.date)}</th><th rowspan="2" class="c">星期${viB(VI.wd)}</th>${M.slots.map((s) => `<th colspan="2" class="c">${esc(s.name)}${s.time ? `<small> ${esc(s.time)}</small>` : ''}${slotVi(s)}</th>`).join('')}</tr>
+          <tr>${M.slots.map(() => `<th class="c">溫度${viB(VI.temp)}</th><th class="c">記錄人${viB(VI.by)}</th>`).join('')}</tr>
         </thead>
         <tbody>${S.rows.map((r) => {
           const wd = pd(r.d).getDay();
-          return `<tr class="${wd % 6 === 0 ? 'we' : ''}"><td class="c">${+r.d.slice(8)}</td><td class="c">${WD[wd]}</td>${r.cells.map((c) => c.e
-            ? `<td class="c t${c.e.x ? ' x' : ''}">${t1(c.e.t)}</td><td class="c by">${esc(c.e.by)}${c.e.ts && c.e.ts.slice(0, 10) !== r.d ? '<small>補</small>' : ''}</td>`
+          return `<tr class="${wd % 6 === 0 ? 'we' : ''}"><td class="c">${+r.d.slice(8)}</td><td class="c">${WD[wd]}${viI(VI.wds[wd])}</td>${r.cells.map((c) => c.e
+            ? `<td class="c t${c.e.x ? ' x' : ''}">${t1(c.e.t)}</td><td class="c by">${esc(c.e.by)}${c.e.ts && c.e.ts.slice(0, 10) !== r.d ? lateMark : ''}</td>`
             : '<td class="c t"></td><td class="c by"></td>').join('')}</tr>`;
         }).join('')}</tbody>
       </table>
@@ -913,17 +941,18 @@
     return `<article class="sheet">
       <header class="sh-head">
         <h2>${esc(name)}${name ? ' ' : ''}冰箱溫度記錄表</h2>
-        <div class="sh-info"><span>區域：<b>${esc(G.area)}</b>（${G.Ss.length} 台）</span><span><b>${y}</b> 年 <b>${+m}</b> 月</span></div>
+        <p class="sh-vi">${VI.title}</p>
+        <div class="sh-info"><span>區域${viI(VI.area)}：<b>${esc(G.area)}</b>（${G.Ss.length} 台${viI(`${G.Ss.length} ${VI.unit}`)}）</span><span>${ymVi(y, m)}</span></div>
       </header>
       <table class="sh-tbl${dense}">
         <thead>
-          <tr><th rowspan="2" class="c">日期</th><th rowspan="2" class="c">星期</th>${G.Ss.map((S) => `<th colspan="${M.slots.length}" class="c">${esc(S.f.name)}</th>`).join('')}<th colspan="${M.slots.length}" class="c">記錄人</th></tr>
-          <tr>${G.Ss.map(() => M.slots.map((s) => `<th class="c">${esc(s.name)}</th>`).join('')).join('')}${M.slots.map((s) => `<th class="c">${esc(s.name)}</th>`).join('')}</tr>
+          <tr><th rowspan="2" class="c">日期${viB(VI.date)}</th><th rowspan="2" class="c">星期${viB(VI.wd)}</th>${G.Ss.map((S) => `<th colspan="${M.slots.length}" class="c">${esc(S.f.name)}</th>`).join('')}<th colspan="${M.slots.length}" class="c">記錄人${viB(VI.by)}</th></tr>
+          <tr>${G.Ss.map(() => M.slots.map((s) => `<th class="c">${esc(s.name)}${slotVi(s)}</th>`).join('')).join('')}${M.slots.map((s) => `<th class="c">${esc(s.name)}${slotVi(s)}</th>`).join('')}</tr>
         </thead>
         <tbody>${G.rows.map((r, i) => {
           const wd = pd(r.d).getDay();
-          return `<tr class="${wd % 6 === 0 ? 'we' : ''}"><td class="c">${+r.d.slice(8)}</td><td class="c">${WD[wd]}</td>${G.Ss.map((S) => S.rows[i].cells.map((c) => (c.e
-            ? `<td class="c t${c.e.x ? ' x' : ''}">${t1(c.e.t)}</td>` : '<td class="c t"></td>')).join('')).join('')}${r.by.map((b, j) => `<td class="c by">${esc(b)}${r.late[j] ? '<small>補</small>' : ''}</td>`).join('')}</tr>`;
+          return `<tr class="${wd % 6 === 0 ? 'we' : ''}"><td class="c">${+r.d.slice(8)}</td><td class="c">${WD[wd]}${viI(VI.wds[wd])}</td>${G.Ss.map((S) => S.rows[i].cells.map((c) => (c.e
+            ? `<td class="c t${c.e.x ? ' x' : ''}">${t1(c.e.t)}</td>` : '<td class="c t"></td>')).join('')).join('')}${r.by.map((b, j) => `<td class="c by">${esc(b)}${r.late[j] ? lateMark : ''}</td>`).join('')}</tr>`;
         }).join('')}</tbody>
       </table>
     </article>`;
