@@ -1,6 +1,6 @@
 // 有網路時一律抓最新版（避免 iPhone 主畫面卡舊版），離線時用快取
-const CACHE = 'dishsales-v4';
-const SHELL = ['./', 'index.html', 'styles.css?v=4', 'config.js?v=4', 'xlsx.js?v=4', 'app.js?v=4', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
+const CACHE = 'dishsales-v5';
+const SHELL = ['./', 'index.html', 'styles.css?v=5', 'config.js?v=5', 'xlsx.js?v=5', 'app.js?v=5', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'vendor/html2canvas.min.js', 'vendor/jspdf.umd.min.js'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

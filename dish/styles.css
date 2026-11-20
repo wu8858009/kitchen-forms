@@ -328,6 +328,7 @@ a.cd:not(.blank):hover { transform: translateY(-2px); box-shadow: var(--shadow-l
   .datebar > .btn.icon { width: 36px; }
   .wd { padding: 4px 7px; }
   .kpis.k3 .kpi .ki { display: none; }
+  .ctl .wd { display: none; }
 }
 @media screen and (max-width: 719px) {
   .kpis { grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
@@ -368,4 +369,94 @@ a.cd:not(.blank):hover { transform: translateY(-2px); box-shadow: var(--shadow-l
   .day-tools .btn { flex: 1 1 auto; }
   .rank .share { min-width: 100px; width: 30%; }
   th, td { padding: 8px 9px; }
+}
+
+/* ---- 備料預估與星期分析 ---- */
+.ctl { display: flex; align-items: center; gap: 10px 18px; flex-wrap: wrap; margin-bottom: 12px; }
+.opt { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: var(--muted); }
+.hint.warn-t { color: var(--brand); }
+.card .kpis.pad { margin-bottom: 14px; }
+.fc .fg td { background: color-mix(in srgb, var(--gc) 8%, var(--surface)); font-weight: 800; font-size: 13px; padding-top: 8px; padding-bottom: 8px; }
+.fc .fg .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--gc); margin-right: 8px; vertical-align: 1px; }
+.fc .fg span { float: right; color: var(--gc); }
+.fc .fr td:first-child { padding-left: 28px; font-weight: 600; }
+.fc .fr.z td { color: var(--muted); }
+.fc .sug { display: inline-block; min-width: 46px; text-align: center; font-size: 16px; padding: 1px 10px; border-radius: 999px; background: var(--brand-soft); color: var(--brand); }
+.fc .fr.z .sug { background: transparent; color: var(--muted); }
+.insight { margin: 0 0 6px; font-size: 14px; }
+.insight b { color: var(--brand); }
+.wbars { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; align-items: end; margin: 6px 0 4px; }
+.wb { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }
+.wb .bv { font-size: 14px; font-weight: 800; }
+.wb .bt { width: 100%; max-width: 56px; height: 140px; display: flex; align-items: flex-end; background: var(--surface-2); border-radius: 10px; overflow: hidden; }
+.wb .bt i { display: block; width: 100%; border-radius: 10px 10px 0 0; background: color-mix(in srgb, var(--brand) 45%, var(--surface)); transition: height .3s; }
+.wb.hi .bt i { background: linear-gradient(180deg, var(--brand-2), var(--brand)); }
+.wb.hi .bv { color: var(--brand); }
+.wb b { font-size: 14px; color: var(--text-2); }
+.wb.we b { color: var(--brand); }
+.wb small { font-size: 11px; color: var(--muted); }
+.sm-h { font-size: 14px !important; }
+.wk th.we { color: var(--brand); }
+.wk td:not(:first-child), .wk th:not(:first-child) { min-width: 48px; }
+
+/* ---- PDF 版面（畫面外產生，固定白底） ---- */
+.pdf-render { position: fixed; left: -10000px; top: 0; width: 718px; background: #fff; color: #1f1a14; color-scheme: light; }
+.rp { width: 718px; padding: 4px 2px; font: 12px/1.45 "Microsoft JhengHei", "PingFang TC", "Noto Sans TC", system-ui, sans-serif; color: #1f1a14; background: #fff; }
+.rp-h { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 3px solid #d9480f; padding-bottom: 8px; margin-bottom: 12px; }
+.rp-shop { font-size: 12px; color: #8a8174; font-weight: 700; }
+.rp h1 { margin: 2px 0 0; font-size: 22px; }
+.rp-sub { text-align: right; font-size: 10.5px; color: #8a8174; }
+.rp-ks { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); grid-auto-flow: column; gap: 8px; margin-bottom: 12px; }
+.rp-k { border: 1px solid #e7e0d5; border-radius: 8px; padding: 6px 10px; }
+.rp-k:first-child { background: #fdebdd; border-color: #f5c9a8; }
+.rp-k span { display: block; font-size: 10.5px; color: #8a8174; font-weight: 700; }
+.rp-k b { font-size: 17px; }
+.rp-row { display: grid; grid-template-columns: 1.7fr 1fr; gap: 10px; }
+.rp-box { border: 1px solid #e7e0d5; border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; }
+.rp-box h2 { font-size: 13px; margin: 0 0 6px; color: #d9480f; }
+.rp-g { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.rp-wh { text-align: center; font-size: 10px; font-weight: 800; color: #8a8174; }
+.rp-wh.we, .rp-d.we i { color: #d9480f; }
+.rp-d { position: relative; height: 38px; border: 1px solid #eee6da; border-radius: 5px; padding: 2px 4px; }
+.rp-d.blank { border: 0; }
+.rp-d i { font-style: normal; font-size: 9.5px; color: #554d43; font-weight: 700; }
+.rp-d b { position: absolute; right: 4px; bottom: 2px; font-size: 13px; }
+.rp-d em { position: absolute; right: 4px; top: 1px; font-style: normal; font-size: 9px; color: #8a8174; }
+.rp-wr { display: grid; grid-template-columns: 34px 1fr 34px; align-items: center; gap: 6px; margin: 5px 0; font-size: 11.5px; }
+.rp-wr.we span:first-child { color: #d9480f; font-weight: 700; }
+.rp-wr b { text-align: right; }
+.rp-wk p { margin: 8px 0 0; font-size: 11px; color: #554d43; }
+.rp-bar { display: inline-block; vertical-align: middle; width: 100%; height: 8px; background: #f2ede5; border-radius: 4px; overflow: hidden; }
+.rp-bar i { display: block; height: 100%; background: #f08c2e; border-radius: 4px; }
+.rp-t .rp-bar { width: 44px; margin-right: 5px; height: 7px; }
+.rp-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.rp-cols:has(> :only-child) { grid-template-columns: 1fr; }
+.rp-t { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+.rp-t th { background: #f2ede5; color: #554d43; font-size: 10.5px; padding: 4px 6px; text-align: left; position: static; }
+.rp-t td { padding: 3.5px 6px; border-bottom: 1px solid #eee6da; white-space: nowrap; }
+.rp-t .r { text-align: right; }
+.rp-t .c { text-align: center; }
+.rp-t tfoot td { font-weight: 800; border-top: 2px solid #e7e0d5; background: #faf7f2; }
+.rp-n { margin: 0; padding-left: 16px; font-size: 11.5px; }
+.rp-n b { margin-right: 6px; }
+.rp-fc td { padding: 6px 7px; font-size: 13px; }
+.rp-fc .rp-cat td { background: #fdebdd; font-weight: 800; color: #b13d0c; padding: 4px 7px; }
+.rp-fc .rp-cat small { font-weight: 600; color: #8a8174; }
+.rp-fc .big { font-size: 16px; font-weight: 800; color: #d9480f; }
+.rp-fc .wr { width: 80px; border-left: 1px solid #eee6da; }
+.rp-sign { display: flex; gap: 60px; margin-top: 22px; font-size: 13px; font-weight: 700; }
+.rp-sign span { flex: 1; border-bottom: 1px solid #999; padding-bottom: 18px; }
+
+@media screen and (max-width: 719px) {
+  .ctl { gap: 10px; }
+  .opt { width: 100%; justify-content: space-between; }
+  .ctl .datebar { flex-wrap: nowrap; }
+  .ctl .datebar input[type=date] { min-width: 0; flex: 1 1 auto; font-size: 15px; padding: 6px 8px; }
+  .ctl .wd { padding: 4px 8px; font-size: 12px; }
+  .wbars { gap: 5px; }
+  .wb .bt { height: 110px; border-radius: 7px; }
+  .wb .bt i { border-radius: 7px 7px 0 0; }
+  .wb .bv { font-size: 12px; }
+  .fc .fr td:first-child { padding-left: 18px; }
+  #nav a { font-size: 10.5px; padding: 4px 2px; }
 }

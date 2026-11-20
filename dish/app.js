@@ -1,7 +1,7 @@
 /* 菜品銷售紀錄 — 每天賣了哪些菜、各幾份；每月合計（PWA 與桌面版共用） */
 (() => {
   'use strict';
-  const VERSION = '2.1.0';
+  const VERSION = '2.2.0';
   const DESK = new URLSearchParams(location.search).has('desktop');
 
   // ------------------------------------------------------------------ 工具
@@ -153,7 +153,7 @@
 
   // ------------------------------------------------------------------ 路由
   // 舊網址 #/menu → 設定、#/report → 每月合計（首頁或書籤的舊連結仍可用）
-  const VIEWS = ['day', 'month', 'settings'];
+  const VIEWS = ['day', 'month', 'plan', 'settings'];
   const cur = { view: '', date: today(), month: today().slice(0, 7) };
   function route() {
     const h = location.hash.replace(/^#\/?/, '').split('/');
@@ -166,6 +166,7 @@
     cur.view = v;
     if (v === 'month') viewMonth(el, /^\d{4}-\d{2}$/.test(h[1] || '') ? h[1] : cur.month);
     else if (v === 'settings') viewSettings(el);
+    else if (v === 'plan') viewPlan(el, validYmd(h[1] || '') ? h[1] : addD(today(), 1));
     else viewDay(el, validYmd(h[1] || '') ? h[1] : today());
   }
   function renderShop() {
@@ -400,6 +401,7 @@
           ${isCur ? '' : '<button class="btn" data-act="cur">回本月</button>'}
         </div>
         <span class="sp"></span>
+        <button class="btn" data-act="pdf" ${R.qty ? '' : 'disabled'}>🖨 月報 PDF</button>
         <button class="btn primary" data-act="xlsx" ${R.qty ? '' : 'disabled'}>⬇ 匯出本月 Excel</button>
       </div>
       <div class="kpis">
@@ -422,15 +424,210 @@
         : `<p class="empty">這個月還沒有銷售紀錄。</p>`}
       </section>`;
     const go = (x) => { location.hash = '#/month/' + x; };
-    el.onclick = (e) => {
+    el.onclick = async (e) => {
       const b = e.target.closest('[data-act]'); if (!b) return;
       const a = b.dataset.act;
+      if (a === 'pdf') return runPdf(b, () => buildMonthPdf(R));
       if (a === 'prev') go(addM(m, -1));
       else if (a === 'next') go(addM(m, 1));
       else if (a === 'cur') go(t.slice(0, 7));
       else if (a === 'xlsx') exportXlsx(R);
     };
     el.onchange = (e) => { if (e.target.id === 'month' && /^\d{4}-\d{2}$/.test(e.target.value)) go(e.target.value); };
+  }
+
+  // ------------------------------------------------------------------ 備料預估與星期分析
+  const WDM = [1, 2, 3, 4, 5, 6, 0]; // 週一開頭
+  const wdi = (k) => (pd(k).getDay() + 6) % 7; // 0=週一 … 6=週日
+  const dayQty = (v) => (v ? Object.values(v.items).reduce((s, e) => s + e.q, 0) : 0);
+  const salesDays = () => Object.keys(db.sales).filter((k) => dayQty(db.sales[k]) > 0).sort();
+  const plan = { n: 4, buf: 10, weeks: 8 };
+  // 依過去 n 個「同一個星期幾」有營業的日子平均；同星期幾還沒有紀錄時改用最近 n 天
+  function forecast(date, n = plan.n, buf = plan.buf) {
+    const all = salesDays().filter((k) => k < date);
+    let ref = all.filter((k) => pd(k).getDay() === pd(date).getDay()).slice(-n);
+    const same = ref.length > 0;
+    if (!same) ref = all.slice(-n);
+    const used = new Set(ref.flatMap((k) => Object.keys(db.sales[k].items).filter((id) => db.sales[k].items[id].q > 0)));
+    const list = liveDishes().filter((d) => !d.off || used.has(d.id));
+    const rows = list.map((d) => {
+      const qs = ref.map((k) => qOf(db.sales[k], d.id));
+      const avg = qs.length ? qs.reduce((a, b) => a + b, 0) / qs.length : 0;
+      return { d, avg, max: qs.length ? Math.max(...qs) : 0, last: qs.length ? qs[qs.length - 1] : 0, sug: avg > 0 ? Math.ceil(avg * (1 + buf / 100)) : 0 };
+    });
+    return { date, ref, same, n, buf, rows, total: rows.reduce((s, r) => s + r.sug, 0), avgTotal: rows.reduce((s, r) => s + r.avg, 0) };
+  }
+  // 最近 weeks 週、每個星期幾平均賣幾份（只算有記錄份數的日子，公休日不拉低平均）
+  function weekdayStats(weeks = plan.weeks, end = today()) {
+    const start = addD(end, -weeks * 7 + 1);
+    const days = salesDays().filter((k) => k >= start && k <= end);
+    return { start, end, weeks, ...wdAgg(days) };
+  }
+  function wdAgg(days) {
+    const by = WDM.map((w) => ({ w, n: 0, tot: 0, avg: 0 }));
+    const per = new Map();
+    for (const k of days) {
+      const i = wdi(k), v = db.sales[k];
+      by[i].n++; by[i].tot += dayQty(v);
+      for (const [id, e] of Object.entries(v.items)) {
+        if (!e.q) continue;
+        if (!per.has(id)) per.set(id, [0, 0, 0, 0, 0, 0, 0]);
+        per.get(id)[i] += e.q;
+      }
+    }
+    by.forEach((b) => { b.avg = b.n ? b.tot / b.n : 0; });
+    const order = new Map(db.dishes.map((d, i) => [d.id, i]));
+    const rows = [...per].map(([id, s]) => ({ d: dishById(id) || { id, name: '（已移除的菜）', cat: '', deleted: true }, avg: s.map((x, i) => (by[i].n ? x / by[i].n : 0)) }))
+      .sort((a, b) => (order.get(a.d.id) ?? 1e9) - (order.get(b.d.id) ?? 1e9));
+    const open = by.filter((b) => b.n);
+    const busy = open.length ? open.reduce((a, b) => (b.avg > a.avg ? b : a)) : null;
+    const calm = open.length ? open.reduce((a, b) => (b.avg < a.avg ? b : a)) : null;
+    return { days: days.length, by, rows, busy, calm };
+  }
+  const f1 = (n) => (n >= 10 || n === 0 ? fmt(n) : n.toFixed(1));
+  const md = (k) => `${+k.slice(5, 7)}/${+k.slice(8)}`;
+  function seg(k, vals, unit) {
+    return `<div class="seg" role="group">${vals.map((v) => `<button data-act="set" data-k="${k}" data-v="${v}" class="${plan[k] === v ? 'on' : ''}">${unit(v)}</button>`).join('')}</div>`;
+  }
+  function viewPlan(el, date) {
+    const F = forecast(date);
+    const W = weekdayStats();
+    const t = today(), wd = pd(date).getDay();
+    const rel = date === t ? '今天' : date === addD(t, 1) ? '明天' : date === addD(t, 2) ? '後天' : '';
+    const byCat = new Map();
+    for (const r of F.rows) { if (!byCat.has(r.d.cat)) byCat.set(r.d.cat, []); byCat.get(r.d.cat).push(r); }
+    const maxBar = Math.max(1, ...W.by.map((b) => b.avg));
+    const heat = (v, lo, hi) => (v > 0 ? ` style="background:color-mix(in srgb, var(--brand) ${Math.round(5 + 33 * (hi > lo ? (v - lo) / (hi - lo) : 1))}%, transparent)"` : '');
+    el.innerHTML = `
+      <div class="page-head"><h2>備料預估與分析</h2></div>
+      <section class="card" id="fc">
+        <div class="card-head"><h3>🧾 備料預估</h3><span class="muted sm">用過去同一個星期幾賣的份數，估計這天要備多少</span><span class="sp"></span>
+          <button class="btn" data-act="fcpdf" ${F.ref.length ? '' : 'disabled'}>⬇ 備料單 PDF</button></div>
+        <div class="ctl pad">
+          <div class="datebar">
+            <button class="btn icon" data-act="prev" title="前一天" aria-label="前一天">◀</button>
+            <input type="date" id="pdate" value="${date}" aria-label="預估日期">
+            <span class="wd${wd % 6 === 0 ? ' we' : ''}">週${WD[wd]}${rel ? '・' + rel : ''}</span>
+            <button class="btn icon" data-act="next" title="後一天" aria-label="後一天">▶</button>
+          </div>
+          <div class="opt"><span>參考最近</span>${seg('n', [4, 6, 8], (v) => `${v} 次`)}</div>
+          <div class="opt"><span>多備</span>${seg('buf', [0, 10, 20], (v) => (v ? `+${v}%` : '不加'))}</div>
+        </div>
+        ${!F.ref.length ? '<p class="empty">還沒有銷售紀錄，記錄幾天之後就能預估。</p>' : `
+        <p class="hint pad${F.same ? '' : ' warn-t'}">${F.same ? `參考 ${F.ref.length} 個週${WD[wd]}：` : `還沒有週${WD[wd]}的紀錄，先用最近 ${F.ref.length} 天：`}${F.ref.slice().reverse().map(md).join('、')}</p>
+        <div class="kpis k3 pad">
+          ${kpi('建議總備量', fmt(F.total) + '<small> 份</small>', F.buf ? `平均再多備 ${F.buf}%` : '照平均', 'main', '🧾')}
+          ${kpi('平均賣出', f1(F.avgTotal) + '<small> 份</small>', '', '', '📊')}
+          ${kpi('要備的菜', F.rows.filter((r) => r.sug).length + '<small> 道</small>', '', '', '🥢')}
+        </div>
+        <div class="tbl-wrap"><table class="fc"><thead><tr><th>菜品</th><th class="r">平均</th><th class="r">上次</th><th class="r">最多</th><th class="r">建議備</th></tr></thead>
+          <tbody>${[...byCat].map(([cat, rs], gi) => `<tr class="fg" style="--gc:var(--c${gi % 6 + 1})"><td colspan="5"><i class="dot"></i>${esc(cat)}<span>${fmt(rs.reduce((s, r) => s + r.sug, 0))} 份</span></td></tr>`
+            + rs.map((r) => `<tr class="fr${r.sug ? '' : ' z'}"><td>${esc(r.d.name || '未命名')}${r.d.off ? '<small class="tag">停售</small>' : ''}</td><td class="r">${f1(r.avg)}</td><td class="r muted">${r.last}</td><td class="r muted">${r.max}</td><td class="r"><b class="sug">${r.sug || '—'}</b></td></tr>`).join('')).join('')}</tbody>
+          <tfoot><tr><td>合計</td><td class="r">${f1(F.avgTotal)}</td><td></td><td></td><td class="r">${fmt(F.total)}</td></tr></tfoot></table></div>`}
+      </section>
+      <section class="card" id="wk">
+        <div class="card-head"><h3>📊 星期分析</h3><span class="muted sm">${W.start.replace(/-/g, '/')} ～ ${W.end.replace(/-/g, '/')}，共 ${W.days} 天有營業</span><span class="sp"></span>${seg('weeks', [4, 8, 12], (v) => `${v} 週`)}</div>
+        ${!W.days ? '<p class="empty">這段期間沒有銷售紀錄。</p>' : `
+        <p class="pad insight">🔥 最忙是<b>週${WD[W.busy.w]}</b>，平均 <b>${fmt(W.busy.avg)}</b> 份；🌙 最閒是<b>週${WD[W.calm.w]}</b>，平均 <b>${fmt(W.calm.avg)}</b> 份${W.calm.avg ? `，相差 ${Math.round((W.busy.avg / W.calm.avg - 1) * 100)}%` : ''}。</p>
+        <div class="wbars pad">${W.by.map((b) => `<div class="wb${b === W.busy ? ' hi' : ''}${b.w % 6 === 0 ? ' we' : ''}" title="週${WD[b.w]}：${b.n} 天，共 ${fmt(b.tot)} 份">
+            <span class="bv">${b.n ? fmt(b.avg) : '—'}</span><div class="bt"><i style="height:${(b.avg / maxBar * 100).toFixed(1)}%"></i></div><b>${WD[b.w]}</b><small>${b.n} 天</small></div>`).join('')}</div>
+        <div class="card-head"><h3 class="sm-h">各菜品每個星期幾平均份數</h3><span class="muted sm">顏色越深賣越多（每道菜各自比較）</span></div>
+        <div class="tbl-wrap"><table class="wk"><thead><tr><th>菜品</th>${WDM.map((w) => `<th class="r${w % 6 === 0 ? ' we' : ''}">${WD[w]}</th>`).join('')}</tr></thead>
+          <tbody>${W.rows.map((r) => { const m = Math.max(...r.avg), lo = Math.min(...r.avg.filter((x) => x > 0)); return `<tr><td>${esc(r.d.name || '未命名')}${r.d.deleted ? '<small class="tag">已刪除</small>' : ''}</td>${r.avg.map((v) => `<td class="r${v === m && m > 0 ? ' b' : ''}"${heat(v, lo, m)}>${v ? f1(v) : '<span class="muted">—</span>'}</td>`).join('')}</tr>`; }).join('')}</tbody>
+          <tfoot><tr><td>每天合計</td>${W.by.map((b) => `<td class="r">${b.n ? fmt(b.avg) : '—'}</td>`).join('')}</tr></tfoot></table></div>`}
+      </section>`;
+    const go = (s) => { location.hash = '#/plan/' + s; };
+    el.onclick = async (e) => {
+      const b = e.target.closest('[data-act]'); if (!b) return;
+      const a = b.dataset.act;
+      if (a === 'prev') go(addD(date, -1));
+      else if (a === 'next') go(addD(date, 1));
+      else if (a === 'set') { plan[b.dataset.k] = +b.dataset.v; const y = window.scrollY; viewPlan(el, date); window.scrollTo(0, y); }
+      else if (a === 'fcpdf') await runPdf(b, () => buildForecastPdf(F));
+    };
+    el.onchange = (e) => { if (e.target.id === 'pdate' && validYmd(e.target.value)) go(e.target.value); };
+  }
+
+  // ------------------------------------------------------------------ PDF（月報、備料單）：html2canvas 截圖成 A4
+  const loadedJs = {};
+  const loadJs = (src) => loadedJs[src] || (loadedJs[src] = new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = src; s.onload = res;
+    s.onerror = () => { delete loadedJs[src]; rej(new Error('無法載入 PDF 元件，請確認網路後再試')); };
+    document.head.append(s);
+  }));
+  async function htmlToPdf(pages) {
+    await loadJs('vendor/html2canvas.min.js');
+    await loadJs('vendor/jspdf.umd.min.js');
+    const host = document.createElement('div');
+    host.className = 'pdf-render';
+    host.innerHTML = pages.join('');
+    document.body.append(host);
+    try {
+      const W = 210, H = 297, MG = 10, cw = W - MG * 2, chh = H - MG * 2;
+      const pdf = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+      let i = 0;
+      for (const sh of host.children) {
+        const cv = await window.html2canvas(sh, { scale: 2, backgroundColor: '#ffffff', windowWidth: 800 });
+        let w = cw, h = cv.height / cv.width * cw;
+        if (h > chh) { w *= chh / h; h = chh; } // 太長就等比縮小放進一頁
+        if (i++) pdf.addPage();
+        pdf.addImage(cv.toDataURL('image/jpeg', 0.92), 'JPEG', MG + (cw - w) / 2, MG, w, h);
+      }
+      return new Uint8Array(pdf.output('arraybuffer'));
+    } finally { host.remove(); }
+  }
+  async function runPdf(btn, make) {
+    const t = btn.textContent;
+    btn.disabled = true; btn.textContent = '產生中…';
+    try { const [bytes, name] = await make(); await saveFile(bytes, name, 'application/pdf'); } catch (err) { alert('PDF 產生失敗：' + err.message); } finally { btn.disabled = false; btn.textContent = t; }
+  }
+  const rpHead = (title, sub) => `<div class="rp-h"><div><div class="rp-shop">${esc(db.shop || '菜品銷售紀錄')}</div><h1>${title}</h1></div><div class="rp-sub">${sub}<br>列印時間 ${new Date().toLocaleString('zh-TW', { hour12: false })}</div></div>`;
+  const rpKpi = (l, v) => `<div class="rp-k"><span>${l}</span><b>${v}</b></div>`;
+  async function buildMonthPdf(R) {
+    const m = R.m, title = `${m.slice(0, 4)} 年 ${+m.slice(5, 7)} 月 菜品銷售月報`;
+    const lead = (new Date(+m.slice(0, 4), +m.slice(5, 7) - 1, 1).getDay() + 6) % 7;
+    let cells = '';
+    for (let i = 0; i < lead; i++) cells += '<div class="rp-d blank"></div>';
+    const maxQ = Math.max(1, ...[...R.byDay.values()].map((x) => x.qty));
+    for (let d = 1; d <= R.n; d++) {
+      const k = `${m}-${pad(d)}`, x = R.byDay.get(k), w = (lead + d - 1) % 7;
+      cells += `<div class="rp-d${w >= 5 ? ' we' : ''}"${x && x.qty ? ` style="background:rgba(217,72,15,${(0.06 + 0.3 * x.qty / maxQ).toFixed(2)})"` : ''}><i>${d}</i><b>${x && x.qty ? fmt(x.qty) : ''}</b>${x && x.note.trim() ? '<em>✎</em>' : ''}</div>`;
+    }
+    const W = wdAgg([...R.byDay.keys()].filter((k) => R.byDay.get(k).qty > 0));
+    const maxW = Math.max(1, ...W.by.map((b) => b.avg));
+    const half = R.rows.length > 18 ? Math.ceil(R.rows.length / 2) : R.rows.length;
+    const maxD = Math.max(1, ...R.rows.map((r) => r.qty));
+    const tbl = (rs, off) => `<table class="rp-t"><thead><tr><th>#</th><th>菜品</th><th>分類</th><th class="r">份數</th><th class="r">佔比</th></tr></thead><tbody>${rs.map((r, i) => `<tr><td>${i + off + 1}</td><td><b>${esc(r.d.name || '未命名')}</b></td><td>${esc(r.d.cat)}</td><td class="r"><b>${fmt(r.qty)}</b></td><td class="r"><span class="rp-bar" style="background:linear-gradient(90deg,#f08c2e ${(r.qty / maxD * 100).toFixed(0)}%,#f2ede5 0)"></span>${(r.qty / R.qty * 100).toFixed(1)}%</td></tr>`).join('')}</tbody></table>`;
+    const notes = [...R.byDay].filter(([, x]) => x.note.trim()).sort(([a], [b]) => (a < b ? -1 : 1));
+    const top = R.rows[0];
+    const page = `<div class="rp">
+      ${rpHead(title, `${m.replace('-', '/')}/01 ～ ${m.replace('-', '/')}/${R.n}`)}
+      <div class="rp-ks">${rpKpi('本月總份數', fmt(R.qty) + ' 份')}${rpKpi('有記錄天數', R.days + ' 天')}${rpKpi('平均每天', R.days ? fmt(R.qty / R.days) + ' 份' : '—')}${rpKpi('賣最多', top ? esc(top.d.name) + `（${fmt(top.qty)}）` : '—')}</div>
+      <div class="rp-row">
+        <div class="rp-box rp-cal"><h2>每日份數</h2><div class="rp-g">${['一', '二', '三', '四', '五', '六', '日'].map((x, i) => `<div class="rp-wh${i >= 5 ? ' we' : ''}">${x}</div>`).join('')}${cells}</div></div>
+        <div class="rp-box rp-wk"><h2>星期平均</h2>${W.by.map((b) => `<div class="rp-wr${b.w % 6 === 0 ? ' we' : ''}"><span>週${WD[b.w]}</span><span class="rp-bar"><i style="width:${(b.avg / maxW * 100).toFixed(0)}%"></i></span><b>${b.n ? fmt(b.avg) : '—'}</b></div>`).join('')}
+          ${W.busy ? `<p>最忙週${WD[W.busy.w]}，最閒週${WD[W.calm.w]}</p>` : ''}</div>
+      </div>
+      <div class="rp-box"><h2>各菜品合計（${R.rows.length} 道）</h2>${R.rows.length ? `<div class="rp-cols">${tbl(R.rows.slice(0, half), 0)}${half < R.rows.length ? tbl(R.rows.slice(half), half) : ''}</div>` : '<p>本月沒有銷售紀錄</p>'}</div>
+      ${notes.length ? `<div class="rp-box"><h2>備註</h2><ul class="rp-n">${notes.map(([k, x]) => `<li><b>${md(k)}（${WD[pd(k).getDay()]}）</b>${esc(x.note)}</li>`).join('')}</ul></div>` : ''}
+    </div>`;
+    return [await htmlToPdf([page]), fname(`${db.shop ? db.shop + '_' : ''}菜品銷售月報_${m.replace('-', '')}.pdf`)];
+  }
+  async function buildForecastPdf(F) {
+    const wd = pd(F.date).getDay();
+    const byCat = new Map();
+    for (const r of F.rows) { if (!byCat.has(r.d.cat)) byCat.set(r.d.cat, []); byCat.get(r.d.cat).push(r); }
+    const page = `<div class="rp">
+      ${rpHead(`備料單 ${F.date.replace(/-/g, '/')}（週${WD[wd]}）`, `${F.same ? `參考最近 ${F.ref.length} 個週${WD[wd]}` : `參考最近 ${F.ref.length} 天`}${F.buf ? `，多備 ${F.buf}%` : ''}<br>${F.ref.slice().reverse().map(md).join('、')}`)}
+      <div class="rp-ks">${rpKpi('建議總備量', fmt(F.total) + ' 份')}${rpKpi('平均賣出', f1(F.avgTotal) + ' 份')}${rpKpi('要備的菜', F.rows.filter((r) => r.sug).length + ' 道')}</div>
+      <table class="rp-t rp-fc"><thead><tr><th>菜品</th><th class="r">平均</th><th class="r">上次</th><th class="r">最多</th><th class="r">建議備</th><th class="c">實際備</th><th class="c">賣完時間</th></tr></thead>
+        <tbody>${[...byCat].map(([cat, rs]) => `<tr class="rp-cat"><td colspan="7">${esc(cat)}　<small>${fmt(rs.reduce((s, r) => s + r.sug, 0))} 份</small></td></tr>`
+          + rs.map((r) => `<tr><td><b>${esc(r.d.name || '未命名')}</b></td><td class="r">${f1(r.avg)}</td><td class="r">${r.last}</td><td class="r">${r.max}</td><td class="r big">${r.sug || '—'}</td><td class="wr"></td><td class="wr"></td></tr>`).join('')).join('')}</tbody>
+        <tfoot><tr><td>合計</td><td class="r">${f1(F.avgTotal)}</td><td></td><td></td><td class="r big">${fmt(F.total)}</td><td></td><td></td></tr></tfoot></table>
+      <div class="rp-sign"><span>備料人：</span><span>確認：</span></div>
+    </div>`;
+    return [await htmlToPdf([page]), fname(`${db.shop ? db.shop + '_' : ''}備料單_${F.date.replace(/-/g, '')}.pdf`)];
   }
 
   // ------------------------------------------------------------------ 匯出 Excel（單月：每日銷量明細＋菜品合計）
@@ -721,7 +918,7 @@
         </div>
         ${on ? '<p class="muted pad">連線雲端時「清除所有銷售紀錄」會連雲端一起清除。</p>' : ''}
       </section>
-      <p class="muted center">菜品銷售紀錄 v${VERSION}${DESK ? '（桌面版）' : ''}・快捷鍵 Alt+1～3 切換頁面</p>`;
+      <p class="muted center">菜品銷售紀錄 v${VERSION}${DESK ? '（桌面版）' : ''}・快捷鍵 Alt+1～4 切換頁面</p>`;
     if (DESK) api().then((x) => x.data_path()).then((p) => { const e = $('#dpath'); if (e) e.textContent = p; });
     const redrawList = (focusId, sel) => {
       $('#dlist').innerHTML = dishListHtml();
@@ -867,7 +1064,7 @@
 
   // ------------------------------------------------------------------ 啟動
   document.addEventListener('keydown', (e) => {
-    if (e.altKey && !e.ctrlKey && /^[1-3]$/.test(e.key)) {
+    if (e.altKey && !e.ctrlKey && /^[1-4]$/.test(e.key)) {
       e.preventDefault();
       location.hash = '#/' + VIEWS[+e.key - 1];
     }
@@ -891,6 +1088,6 @@
     }
   }
   // 測試用（廚房專用表格系統也會用 db / Cloud / connectCloud / flush）
-  window.__dish = { get db() { return db; }, flush, Cloud, connectCloud, demoData, monthData, xlsxSheets, buildXlsx: (R) => b64(XLSXW.build(xlsxSheets(R || monthData()))), VERSION };
+  window.__dish = { get db() { return db; }, flush, Cloud, connectCloud, demoData, monthData, forecast, weekdayStats, monthPdf: (m) => buildMonthPdf(monthData(m)), forecastPdf: (d) => buildForecastPdf(forecast(d || addD(today(), 1))), xlsxSheets, buildXlsx: (R) => b64(XLSXW.build(xlsxSheets(R || monthData()))), VERSION };
   start();
 })();
