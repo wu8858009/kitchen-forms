@@ -1,7 +1,7 @@
 /* 菜品銷售紀錄 — 每天賣了哪些菜、各幾份；每月合計（PWA 與桌面版共用） */
 (() => {
   'use strict';
-  const VERSION = '2.0.0';
+  const VERSION = '2.1.0';
   const DESK = new URLSearchParams(location.search).has('desktop');
 
   // ------------------------------------------------------------------ 工具
@@ -172,7 +172,7 @@
     $('#shop').textContent = db.shop || '菜品銷售紀錄';
     document.title = (db.shop ? db.shop + ' · ' : '') + '菜品銷售紀錄';
   }
-  const kpi = (l, v, s = '', cls = '') => `<div class="kpi ${cls}"><div class="l">${l}</div><div class="v">${v}</div>${s ? `<div class="s">${s}</div>` : ''}</div>`;
+  const kpi = (l, v, s = '', cls = '', ic = '') => `<div class="kpi ${cls}"><div class="l">${ic ? `<i class="ki" aria-hidden="true">${ic}</i>` : ''}${l}</div><div class="v">${v}</div>${s ? `<div class="s">${s}</div>` : ''}</div>`;
   const catList = () => [...new Set(liveDishes().map((d) => d.cat))];
 
   // 新增菜品（名稱＋分類）；每日頁與設定頁共用
@@ -232,8 +232,8 @@
         <input id="q" class="search" type="search" placeholder="🔍 搜尋菜品" value="${esc(dayFilter)}">
       </div>
       <div class="kpis k3" id="daykpi"></div>
-      <div class="day-groups">${[...groups].map(([cat, ds]) => `
-        <section class="group"><h3>${esc(cat)}<span class="gq" data-gq></span></h3>
+      <div class="day-groups">${[...groups].map(([cat, ds], gi) => `
+        <section class="group" style="--gc:var(--c${gi % 6 + 1})"><h3><i class="dot"></i>${esc(cat)}<span class="gn">${ds.length} 道</span><span class="gq" data-gq></span></h3>
         ${ds.map((x) => {
           const q = qOf(v, x.id);
           return `<div class="row${q ? ' has' : ''}" data-id="${x.id}" data-name="${esc(x.name.toLowerCase())}">
@@ -330,8 +330,8 @@
     const t = dayTotals(v);
     const kinds = v ? Object.values(v.items).filter((x) => x.q > 0).length : 0;
     const m = monthAgg(cur.date.slice(0, 7));
-    $('#daykpi').innerHTML = kpi('本日總份數', fmt(t.qty) + '<small> 份</small>', '', 'main') + kpi('有賣的菜', kinds + '<small> 道</small>')
-      + kpi(`${+cur.date.slice(5, 7)} 月累計`, fmt(m.qty) + '<small> 份</small>', `<a href="#/month/${cur.date.slice(0, 7)}">看每月合計 ›</a>`);
+    $('#daykpi').innerHTML = kpi('本日總份數', fmt(t.qty) + '<small> 份</small>', '', 'main', '🍽') + kpi('有賣的菜', kinds + '<small> 道</small>', '', '', '🥢')
+      + kpi(`${+cur.date.slice(5, 7)} 月累計`, fmt(m.qty) + '<small> 份</small>', `<a href="#/month/${cur.date.slice(0, 7)}">看每月合計 ›</a>`, '', '📅');
     $$('.day-groups .group').forEach((g) => {
       let n = 0; $$('.row', g).forEach((r) => { n += qOf(v, r.dataset.id); });
       $('[data-gq]', g).textContent = n ? n + ' 份' : '';
@@ -403,20 +403,20 @@
         <button class="btn primary" data-act="xlsx" ${R.qty ? '' : 'disabled'}>⬇ 匯出本月 Excel</button>
       </div>
       <div class="kpis">
-        ${kpi(`${+m.slice(5, 7)} 月總份數`, fmt(R.qty) + '<small> 份</small>', '', 'main')}
-        ${kpi('有記錄天數', R.days + '<small> 天</small>')}
-        ${kpi('平均每天', R.days ? fmt(R.qty / R.days) + '<small> 份</small>' : '—')}
-        ${kpi('賣最多', top ? esc(top.d.name) : '—', top ? fmt(top.qty) + ' 份' : '')}
+        ${kpi(`${+m.slice(5, 7)} 月總份數`, fmt(R.qty) + '<small> 份</small>', '', 'main', '🍽')}
+        ${kpi('有記錄天數', R.days + '<small> 天</small>', '', '', '🗓')}
+        ${kpi('平均每天', R.days ? fmt(R.qty / R.days) + '<small> 份</small>' : '—', '', '', '📈')}
+        ${kpi('賣最多', top ? esc(top.d.name) : '—', top ? fmt(top.qty) + ' 份' : '', 'best', '🏆')}
       </div>
       <section class="card">
-        <div class="card-head"><h3>${m.slice(0, 4)} 年 ${+m.slice(5, 7)} 月 每日份數</h3><span class="muted sm">點日期可查看或修改當天紀錄</span></div>
+        <div class="card-head"><h3>📅 ${m.slice(0, 4)} 年 ${+m.slice(5, 7)} 月 每日份數</h3><span class="muted sm">點日期可查看或修改當天紀錄</span></div>
         <div class="cal"><div class="cal-h">${['一', '二', '三', '四', '五', '六', '日'].map((x, i) => `<span${i >= 5 ? ' class="we"' : ''}>${x}</span>`).join('')}</div>
           <div class="cal-g">${cells}</div></div>
       </section>
       <section class="card">
-        <div class="card-head"><h3>本月各菜品合計</h3><span class="muted sm">${R.rows.length} 道菜有賣</span></div>
+        <div class="card-head"><h3>🏆 本月各菜品合計</h3><span class="muted sm">${R.rows.length} 道菜有賣</span></div>
         ${R.rows.length ? `<div class="tbl-wrap"><table class="rank"><thead><tr><th class="c">#</th><th>菜品</th><th>分類</th><th class="r">份數</th><th class="share">佔比</th></tr></thead>
-        <tbody>${R.rows.map((r, i) => `<tr><td class="c">${i + 1}</td><td>${esc(r.d.name || '未命名')}${r.d.deleted ? '<small class="tag">已刪除</small>' : ''}</td><td class="muted">${esc(r.d.cat)}</td><td class="r b">${fmt(r.qty)}</td>
+        <tbody>${R.rows.map((r, i) => `<tr><td class="c"><span class="rk${i < 3 ? ' r' + (i + 1) : ''}">${i + 1}</span></td><td class="b">${esc(r.d.name || '未命名')}${r.d.deleted ? '<small class="tag">已刪除</small>' : ''}</td><td>${r.d.cat ? `<span class="chip">${esc(r.d.cat)}</span>` : ''}</td><td class="r b">${fmt(r.qty)}</td>
           <td class="share"><span class="track"><i style="width:${(r.qty / maxD * 100).toFixed(1)}%"></i></span><small>${(r.qty / R.qty * 100).toFixed(1)}%</small></td></tr>`).join('')}</tbody>
         <tfoot><tr><td></td><td>合計</td><td></td><td class="r">${fmt(R.qty)}</td><td class="share"></td></tr></tfoot></table></div>`
         : `<p class="empty">這個月還沒有銷售紀錄。</p>`}
@@ -675,9 +675,9 @@
     const on = Cloud.on();
     const live = liveDishes();
     el.innerHTML = `
-      <div class="page-head"><h2>設定</h2></div>
+      <div class="page-head"><h2>菜品與設定</h2></div>
       <section class="card form">
-        <label>店名（顯示在標題與匯出檔名）<input id="shopname" value="${esc(db.shop)}" placeholder="例如：阿明小吃店"></label>
+        <label>🏪 店名（顯示在標題與匯出檔名）<input id="shopname" value="${esc(db.shop)}" placeholder="例如：阿明小吃店"></label>
       </section>
       <section class="card" id="dishes">
         <div class="card-head"><h3>🍱 菜品清單</h3><span class="muted sm">${live.length} 道菜・${catList().length} 個分類</span><div class="sp"></div>
@@ -707,14 +707,14 @@
           <p class="muted pad">第一台連線時輸入的密碼會成為雲端密碼，其他裝置請輸入同一組密碼。</p>`}
       </section>
       <section class="card">
-        <div class="card-head"><h3>資料備份</h3></div>
+        <div class="card-head"><h3>💾 資料備份</h3></div>
         <p class="muted pad">目前有 ${live.length} 道菜、${days.length} 天的銷售紀錄${days.length ? `（${days[0]} ～ ${days[days.length - 1]}）` : ''}。
           ${DESK ? '<br>本機資料檔：<code id="dpath">…</code>（每天自動保留一份備份）' : on ? '' : '<br>資料存在這個瀏覽器裡，換手機或清除瀏覽資料前請先匯出備份。'}</p>
         <div class="btns pad"><button class="btn" data-act="backup">⬇ 匯出備份（JSON）</button>
           <label class="btn">⬆ 從備份還原<input type="file" id="restore" accept=".json,application/json" hidden></label></div>
       </section>
       <section class="card">
-        <div class="card-head"><h3>清除</h3></div>
+        <div class="card-head"><h3>🗑 清除</h3></div>
         <div class="btns pad">
           <button class="btn danger" data-act="clearsales">清除所有銷售紀錄</button>
           <button class="btn danger" data-act="reset" ${on ? 'disabled title="請先中斷雲端連線"' : ''}>全部重設（菜品也清空）</button>
