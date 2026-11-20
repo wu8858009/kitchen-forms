@@ -1,7 +1,7 @@
 {
   "name": "菜品銷售紀錄系統",
   "short_name": "菜品銷售",
-  "description": "每日菜品銷量、菜單價格與營收統計報表",
+  "description": "記錄每天賣了哪些菜、各幾份，每月合計",
   "lang": "zh-Hant",
   "start_url": "./index.html",
   "scope": "./",

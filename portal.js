@@ -137,30 +137,31 @@
   // ------------------------------------------------------------------ 菜品銷售
   function dishSummary(db, now) {
     if (!db || !db.sales) return null;
+    // 菜品銷售 v2 只記份數（舊資料裡的金額不再顯示）
     const sum = (day) => {
       const it = (db.sales[day] && db.sales[day].items) || {};
-      let amt = 0, q = 0, kinds = 0;
-      Object.values(it).forEach((e) => { if (e && e.q > 0) { amt += e.q * (e.p || 0); q += e.q; kinds++; } });
-      return { amt, q, kinds };
+      let q = 0, kinds = 0;
+      Object.values(it).forEach((e) => { if (e && e.q > 0) { q += e.q; kinds++; } });
+      return { q, kinds };
     };
     const today = ymd(now);
     const y = new Date(now); y.setDate(y.getDate() - 1);
     const mon = today.slice(0, 7);
-    let mAmt = 0, mDays = 0;
-    Object.keys(db.sales).forEach((k) => { if (k.startsWith(mon)) { const s = sum(k); if (s.q) { mAmt += s.amt; mDays++; } } });
-    return { shop: db.shop, t: sum(today), y: sum(ymd(y)), mAmt, mDays, month: +mon.slice(5) };
+    let mQ = 0, mDays = 0;
+    Object.keys(db.sales).forEach((k) => { if (k.startsWith(mon)) { const s = sum(k); if (s.q) { mQ += s.q; mDays++; } } });
+    return { shop: db.shop, t: sum(today), y: sum(ymd(y)), mQ, mDays, month: +mon.slice(5) };
   }
   function dishCard(s) {
     let body;
     if (!s) body = '<p class="note">這台裝置還沒有菜品銷售資料，點「開啟」開始使用（可在設定頁連線 Google 雲端取回資料）。</p>';
     else body = `<div class="kpis">
-          <div class="kpi"><div class="l">今日銷售額</div><div class="v">${money(s.t.amt)}</div></div>
           <div class="kpi"><div class="l">今日份數</div><div class="v">${s.t.q}<small> 份</small></div></div>
-          <div class="kpi"><div class="l">${s.month} 月累計</div><div class="v">${money(s.mAmt)}</div></div>
+          <div class="kpi"><div class="l">今日有賣</div><div class="v">${s.t.kinds}<small> 道</small></div></div>
+          <div class="kpi"><div class="l">${s.month} 月累計</div><div class="v">${money(s.mQ)}<small> 份</small></div></div>
         </div>
-        <p class="note">今日 ${s.t.kinds} 道菜有銷量・昨日 ${money(s.y.amt)} 元（${s.y.q} 份）・本月 ${s.mDays} 天有記錄</p>`;
-    return card('dish', '🍱', '菜品銷售紀錄', '每日銷量・菜單價格・統計報表', body,
-      `<a class="btn" href="dish/index.html${Q}#/day" data-mod="dish">開啟</a><a class="btn sub" href="dish/index.html${Q}#/report" data-mod="dish">報表</a>`);
+        <p class="note">昨日 ${money(s.y.q)} 份（${s.y.kinds} 道菜）・本月 ${s.mDays} 天有記錄</p>`;
+    return card('dish', '🍱', '菜品銷售紀錄', '每日份數・每月合計', body,
+      `<a class="btn" href="dish/index.html${Q}#/day" data-mod="dish">開啟</a><a class="btn sub" href="dish/index.html${Q}#/month" data-mod="dish">每月合計</a>`);
   }
 
   // ------------------------------------------------------------------ 員工餐（與電腦版 meal_tracker_pro.py 的週期、預算算法相同）
@@ -350,7 +351,7 @@
     const pr = S.prep;
     if (pr && pr.total) p.push(pill('prep', '📋', '今日備料', `${pr.done}/${pr.total}`, pr.done >= pr.total ? 'ok' : ''));
     const d = S.dish;
-    if (d) p.push(pill('dish', '🍱', '今日銷售', '$' + money(d.t.amt || 0), ''));
+    if (d) p.push(pill('dish', '🍱', '今日銷售', money(d.t.q || 0) + ' 份', ''));
     const ml = S.meal;
     if (ml) p.push(pill('meal', '🍚', '員工餐剩餘', '$' + money(ml.remain), ml.remain < 0 || ml.pct >= ml.danger ? 'bad' : ml.pct >= ml.warn ? 'warn' : 'ok'));
     const so = S.sop;
