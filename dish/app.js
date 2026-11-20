@@ -1,7 +1,7 @@
 /* 菜品銷售紀錄 — 每天賣了哪些菜、各幾份；每月合計（PWA 與桌面版共用） */
 (() => {
   'use strict';
-  const VERSION = '2.2.0';
+  const VERSION = '2.3.0';
   const DESK = new URLSearchParams(location.search).has('desktop');
 
   // ------------------------------------------------------------------ 工具
@@ -85,7 +85,7 @@
     ['飲料', '紅茶', 25, 6], ['飲料', '冬瓜茶', 25, 6],
   ];
   // 每筆資料都有 at（最後修改時間，毫秒）供雲端同步比較新舊；份數改成 0 時保留 {q:0} 當作刪除記號
-  const blank = () => ({ ver: 2, shop: '', shopAt: 0, dishes: [], sales: {}, createdAt: Date.now(), seedAt: 0 });
+  const blank = () => ({ ver: 2, shop: '', shopAt: 0, dishes: [], sales: {}, createdAt: Date.now(), seedAt: 0, me: '', lock: { days: 0, pin: '', at: 0 } });
   function seed() {
     const d = blank(), now = Date.now();
     d.seedAt = now;
@@ -113,11 +113,13 @@
       v.items = v.items && typeof v.items === 'object' ? v.items : {};
       for (const [id, e] of Object.entries(v.items)) {
         if (!e) { delete v.items[id]; continue; }
-        v.items[id] = { q: Math.max(0, Math.floor(num(e.q))), p: num(e.p), c: num(e.c), at: num(e.at) || 1 };
+        v.items[id] = entry(Math.max(0, Math.floor(num(e.q))), num(e.p), num(e.c), num(e.at) || 1, e.so, e.by);
       }
       v.note = String(v.note || '');
       v.noteAt = num(v.noteAt) || (v.note ? 1 : 0);
     }
+    d.me = String(d.me || '').slice(0, 40);
+    d.lock = normLock(d.lock);
     if (d.cloud && typeof d.cloud === 'object') {
       const c = d.cloud;
       d.cloud = { url: String(c.url || ''), pw: String(c.pw || ''), rev: num(c.rev), pushedAt: num(c.pushedAt), on: !!c.on, lastOk: num(c.lastOk), sheet: /^https:\/\/docs\.google\.com\//.test(c.sheet || '') ? String(c.sheet) : '' };
@@ -150,6 +152,48 @@
   }
   const hasSales = (id) => Object.values(db.sales).some((v) => qOf(v, id) > 0);
   const dayHasData = (v) => !!v && (Object.values(v.items).some((e) => e.q > 0) || !!v.note.trim());
+
+  // 份數紀錄 {q, p, c, at, so?: 賣完時間 HH:MM, by?: 最後修改的人}
+  const okHm = (t) => (/^\d{1,2}:\d{2}$/.test(String(t || '').trim()) ? String(t).trim().padStart(5, '0') : '');
+  function entry(q, p, c, at, so, by) {
+    const o = { q, p, c, at };
+    const h = okHm(so), w = String(by || '').trim().slice(0, 40);
+    if (h) o.so = h;
+    if (w) o.by = w;
+    return o;
+  }
+  // 誰在用：廚房專用表格系統登入的人，或設定頁填的「這台裝置的使用者」
+  function who() {
+    try { const a = window.KitchenAuth && window.KitchenAuth.get(); if (a && a.me && a.me.name) return String(a.me.name); } catch (e) { /* 沒有廚房登入 */ }
+    return db.me || '';
+  }
+  function stamp(e) { e.at = now(); const w = who(); if (w) e.by = w; else delete e.by; }
+  const hmOf = (t) => { const d = new Date(t); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+  const whenOf = (t) => { const d = new Date(t); return (ymd(d) === today() ? '' : `${d.getMonth() + 1}/${d.getDate()} `) + hmOf(t); };
+
+  // 鎖定過去日期：db.lock {days: 只能改最近幾天（0 不鎖）, pin: 主管密碼雜湊, at}
+  function normLock(x) {
+    return x && typeof x === 'object' ? { days: Math.max(0, Math.floor(num(x.days))), pin: String(x.pin || ''), at: num(x.at) } : { days: 0, pin: '', at: 0 };
+  }
+  let unlockUntil = 0;
+  const lockOn = () => !!(db.lock && db.lock.days > 0 && db.lock.pin);
+  const kitchenAdmin = () => { try { return !!(window.KitchenAuth && window.KitchenAuth.isAdmin()); } catch (e) { return false; } };
+  const unlocked = () => !lockOn() || kitchenAdmin() || Date.now() < unlockUntil;
+  const isLocked = (date) => lockOn() && date <= addD(today(), -db.lock.days) && !unlocked();
+  const lockText = (n) => (n === 1 ? '只能修改今天' : `只能修改最近 ${n} 天`);
+  async function pinHash(pin) {
+    const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('dishlock:' + pin));
+    return [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, '0')).join('');
+  }
+  // 需要主管密碼的動作：沒鎖定、已解鎖或廚房管理者直接通過；解鎖 15 分鐘
+  async function askPin(msg) {
+    if (unlocked()) return true;
+    const p = await askText(msg || '請輸入主管密碼', 'password', '', '輸入後 15 分鐘內不用再輸入');
+    if (p == null) return false;
+    if (await pinHash(p) === db.lock.pin) { unlockUntil = Date.now() + 15 * 60000; return true; }
+    alert('主管密碼不對');
+    return false;
+  }
 
   // ------------------------------------------------------------------ 路由
   // 舊網址 #/menu → 設定、#/report → 每月合計（首頁或書籤的舊連結仍可用）
@@ -201,6 +245,35 @@
       $('input', m).focus();
     });
   }
+  function dialog(html, onSubmit) {
+    return new Promise((res) => {
+      const m = document.createElement('div');
+      m.className = 'modal';
+      m.innerHTML = `<form class="dlg" role="dialog" aria-modal="true">${html}</form>`;
+      const done = (v) => { m.remove(); res(v); };
+      m.onclick = (e) => {
+        if (e.target === m || e.target.closest('[data-k=x]')) done(null);
+        const k = e.target.closest('[data-k]'); if (k && k.dataset.k !== 'x') done({ k: k.dataset.k });
+      };
+      m.onkeydown = (e) => { if (e.key === 'Escape') done(null); };
+      $('form', m).onsubmit = (e) => { e.preventDefault(); done(onSubmit(e.target)); };
+      document.body.append(m);
+      const f = $('input', m); if (f) { f.focus(); if (f.select) f.select(); }
+    });
+  }
+  function askText(title, type = 'text', value = '', hint = '') {
+    return dialog(`<h3>${esc(title)}</h3>${hint ? `<p class="muted">${esc(hint)}</p>` : ''}
+      <label class="fl"><input name="v" type="${type}" value="${esc(value)}" autocomplete="off"${type === 'password' ? ' inputmode="numeric"' : ''}></label>
+      <div class="btns row2"><button type="button" class="btn" data-k="x">取消</button><button class="btn primary">確定</button></div>`, (f) => f.v.value);
+  }
+  // 回傳 'HH:MM'（賣完）、''（清除）或 null（取消）
+  async function askSoldOut(name, curSo, def) {
+    const r = await dialog(`<h3>⏱ ${esc(name)} 賣完時間</h3><p class="muted">記下幾點賣完，備料預估會把這天當作「還能再多賣」。</p>
+      <label class="fl">幾點賣完<input name="t" type="time" value="${curSo || def}" required></label>
+      <div class="btns row2">${curSo ? '<button type="button" class="btn danger" data-k="clr">沒賣完</button>' : ''}<button type="button" class="btn" data-k="x">取消</button><button class="btn primary">儲存</button></div>`, (f) => okHm(f.t.value));
+    if (r == null) return null;
+    return typeof r === 'object' ? '' : r;
+  }
   function addDish(name, cat) {
     const ord = Math.max(0, ...db.dishes.filter((x) => x.cat === cat && !x.deleted).map((x) => x.ord));
     const d = { id: uid(), name, cat, price: 0, cost: 0, off: false, deleted: false, ord: ord ? ord + 0.001 : Math.max(0, ...db.dishes.map((x) => x.ord)) + 1, at: now() };
@@ -221,6 +294,9 @@
     const groups = groupByCat([...list, ...extra]);
     const wd = pd(date).getDay();
     const isToday = date === today();
+    const ro = isLocked(date);
+    const dis = ro ? ' disabled' : '';
+    const log = v ? Object.entries(v.items).filter(([, e]) => e.at > 1000).sort((a, b) => b[1].at - a[1].at) : [];
     el.innerHTML = `
       <div class="page-head">
         <div class="datebar">
@@ -232,34 +308,50 @@
         </div>
         <input id="q" class="search" type="search" placeholder="🔍 搜尋菜品" value="${esc(dayFilter)}">
       </div>
+      ${ro ? `<div class="lockbar"><span>🔒 ${lockText(db.lock.days)}的紀錄，這天已鎖定，只能查看。</span><button class="btn" data-act="unlock">輸入主管密碼解鎖</button></div>` : ''}
       <div class="kpis k3" id="daykpi"></div>
-      <div class="day-groups">${[...groups].map(([cat, ds], gi) => `
+      <div class="day-groups${ro ? ' ro' : ''}">${[...groups].map(([cat, ds], gi) => `
         <section class="group" style="--gc:var(--c${gi % 6 + 1})"><h3><i class="dot"></i>${esc(cat)}<span class="gn">${ds.length} 道</span><span class="gq" data-gq></span></h3>
         ${ds.map((x) => {
-          const q = qOf(v, x.id);
+          const q = qOf(v, x.id), en = v && v.items[x.id];
           return `<div class="row${q ? ' has' : ''}" data-id="${x.id}" data-name="${esc(x.name.toLowerCase())}">
-            <div class="nm">${esc(x.name || '未命名')}${x.deleted ? '<small class="tag">已刪除</small>' : ''}${x.off ? '<small class="tag">停售</small>' : ''}</div>
-            <div class="qty"><button class="btn icon" data-act="dec" tabindex="-1" aria-label="減一">−</button><input type="number" min="0" step="1" inputmode="numeric" value="${q || ''}" placeholder="0" data-q aria-label="${esc(x.name)} 份數"><button class="btn icon" data-act="inc" tabindex="-1" aria-label="加一">＋</button></div></div>`;
+            <div class="nm"${en && en.at > 1000 ? ` title="最後修改：${esc(en.by || '未填名字')} ${whenOf(en.at)}"` : ''}>${esc(x.name || '未命名')}${x.deleted ? '<small class="tag">已刪除</small>' : ''}${x.off ? '<small class="tag">停售</small>' : ''}<small class="so" data-so${q && en.so ? '' : ' hidden'}>⏱ ${q && en.so ? en.so : ''} 賣完</small></div>
+            <button class="btn icon sob${q && en.so ? ' on' : ''}" data-act="so" tabindex="-1" title="記錄賣完時間" aria-label="${esc(x.name)} 賣完時間"${q && !ro ? '' : ' disabled'}>⏱</button>
+            <div class="qty"><button class="btn icon" data-act="dec" tabindex="-1" aria-label="減一"${dis}>−</button><input type="number" min="0" step="1" inputmode="numeric" value="${q || ''}" placeholder="0" data-q aria-label="${esc(x.name)} 份數"${dis}><button class="btn icon" data-act="inc" tabindex="-1" aria-label="加一"${dis}>＋</button></div></div>`;
         }).join('')}
         </section>`).join('') || '<p class="empty">還沒有菜品，按下方「＋ 新增菜品」開始。</p>'}
       </div>
       <p class="empty" id="nomatch" hidden>找不到符合的菜品</p>
-      <label class="note">備註<textarea id="note" rows="2" placeholder="例如：下雨、包場、店休…">${esc(v ? v.note : '')}</textarea></label>
+      <label class="note">備註<textarea id="note" rows="2" placeholder="例如：下雨、包場、店休…"${dis}>${esc(v ? v.note : '')}</textarea></label>
       <div class="day-tools">
         <button class="btn" data-act="add">＋ 新增菜品</button>
         <span class="sp"></span>
-        <button class="btn" data-act="copy" title="把最近一個有紀錄的日子的份數帶入本日（只填本日沒輸入的菜）">帶入上次份數</button>
-        <button class="btn danger" data-act="clearday">清空本日</button>
-      </div>`;
+        ${ro ? '' : `<button class="btn" data-act="copy" title="把最近一個有紀錄的日子的份數帶入本日（只填本日沒輸入的菜）">帶入上次份數</button>
+        <button class="btn danger" data-act="clearday">清空本日</button>`}
+      </div>
+      ${log.length ? `<details class="card daylog"><summary>📝 本日修改紀錄 <span class="muted sm">每道菜最後一次是誰、幾點改的</span></summary>
+        <ul>${log.map(([id, e]) => { const d = dishById(id); return `<li><time>${whenOf(e.at)}</time><b>${esc(e.by || '未填名字')}</b><span>${esc(d ? d.name : '（已移除的菜）')}</span><span class="r">${e.q ? fmt(e.q) + ' 份' : '清除'}${e.q && e.so ? `・${e.so} 賣完` : ''}</span></li>`; }).join('')}</ul></details>` : ''}`;
     const go = (s) => { location.hash = '#/day/' + s; };
     applyFilter(); renderDayKpi();
     el.onclick = async (e) => {
       const b = e.target.closest('[data-act]'); if (!b) return;
       const a = b.dataset.act;
+      if (ro && !['prev', 'next', 'today', 'add', 'unlock'].includes(a)) return;
       if (a === 'prev') go(addD(date, -1));
       else if (a === 'next') go(addD(date, 1));
       else if (a === 'today') go(today());
-      else if (a === 'inc' || a === 'dec') {
+      else if (a === 'unlock') { if (await askPin('解鎖過去的紀錄')) { route(); toast('已解鎖 15 分鐘'); } }
+      else if (a === 'so') {
+        const row = b.closest('.row'), x = dishById(row.dataset.id), en = db.sales[date] && db.sales[date].items[row.dataset.id];
+        if (!en || !en.q) return;
+        const r = await askSoldOut(x ? x.name : '', en.so || '', date === today() ? hmOf(Date.now()) : '');
+        if (r == null || r === (en.so || '')) return;
+        if (r) en.so = r; else delete en.so;
+        stamp(en); save();
+        b.classList.toggle('on', !!r);
+        const tg = $('[data-so]', row); tg.hidden = !r; tg.textContent = `⏱ ${r} 賣完`;
+        toast(r ? `已記錄 ${x ? x.name : ''} ${r} 賣完` : '已清除賣完時間');
+      } else if (a === 'inc' || a === 'dec') {
         const row = b.closest('.row'); const inp = $('[data-q]', row);
         const q = Math.max(0, (parseInt(inp.value, 10) || 0) + (a === 'inc' ? 1 : -1));
         inp.value = q || '';
@@ -276,7 +368,7 @@
         if (!dayHasData(day)) return toast('本日沒有資料');
         if (confirm(`確定清空 ${date} 的所有份數與備註？`)) {
           const t = now();
-          for (const x of Object.values(day.items)) if (x.q) { x.q = 0; x.at = t; }
+          for (const x of Object.values(day.items)) if (x.q) { x.q = 0; delete x.so; stamp(x); x.at = t; }
           if (day.note) { day.note = ''; day.noteAt = t; }
           save(); route();
         }
@@ -287,7 +379,7 @@
         for (const [id, x] of Object.entries(db.sales[prev].items)) {
           const d = dishById(id);
           if (!x.q || !d || d.deleted || d.off || qOf(day, id) > 0) continue;
-          day.items[id] = { q: x.q, p: d.price, c: d.cost, at: t }; n++;
+          day.items[id] = entry(x.q, d.price, d.cost, t, '', who()); n++;
         }
         cleanupDay(date); save(); route();
         toast(n ? `已帶入 ${prev} 的 ${n} 道菜份數，請再修正` : '沒有可帶入的菜品');
@@ -319,11 +411,13 @@
     const e = day && day.items[id];
     if (e && e.q === q) return;
     if (q > 0) {
-      if (e && e.q > 0) { e.q = q; e.at = now(); }
-      else day.items[id] = { q, p: x.price, c: x.cost, at: now() }; // p/c 保留給舊版與試算表的欄位
-    } else if (e) { e.q = 0; e.at = now(); }
+      if (e && e.q > 0) { e.q = q; stamp(e); }
+      else day.items[id] = entry(q, x.price, x.cost, now(), '', who()); // p/c 保留給舊版與試算表的欄位
+    } else if (e) { e.q = 0; delete e.so; stamp(e); }
     save();
     row.classList.toggle('has', q > 0);
+    const sb = $('[data-act=so]', row);
+    if (sb) { sb.disabled = q <= 0; if (q <= 0) { sb.classList.remove('on'); $('[data-so]', row).hidden = true; } }
     renderDayKpi();
   }
   function renderDayKpi() {
@@ -352,10 +446,10 @@
   // ------------------------------------------------------------------ 每月合計
   const addM = (m, n) => { const d = new Date(+m.slice(0, 4), +m.slice(5, 7) - 1 + n, 1); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`; };
   const daysIn = (m) => new Date(+m.slice(0, 4), +m.slice(5, 7), 0).getDate();
-  function monthAgg(m) {
+  function monthAgg(m, upto = 31) {
     const r = { m, qty: 0, days: 0, byDay: new Map(), byDish: new Map() };
     for (const [k, v] of Object.entries(db.sales)) {
-      if (!k.startsWith(m + '-')) continue;
+      if (!k.startsWith(m + '-') || +k.slice(8) > upto) continue;
       let q = 0;
       for (const [id, e] of Object.entries(v.items)) {
         if (!e.q) continue;
@@ -371,8 +465,21 @@
     const a = monthAgg(m);
     const rows = [...a.byDish].map(([id, qty]) => ({ d: dishById(id) || { id, name: '（已移除的菜）', cat: '', deleted: true }, qty }))
       .sort((x, y) => y.qty - x.qty || x.d.name.localeCompare(y.d.name, 'zh-Hant'));
-    return { ...a, rows, n: daysIn(m) };
+    // 同期比較：本月還沒過完時，上月、去年同月也只算到同一天
+    const t = today(), upto = m === t.slice(0, 7) ? +t.slice(8) : 0;
+    const prev = monthAgg(addM(m, -1), upto || 31), year = monthAgg(addM(m, -12), upto || 31);
+    return { ...a, rows, n: daysIn(m), cmp: { upto, prev, year } };
   }
+  let cmpBase = 'prev';
+  const pctCh = (a, b) => (b ? (a / b - 1) : null);
+  function dlt(a, b, plain) {
+    const c = pctCh(a, b);
+    if (c == null) return plain ? '—' : (a ? '<span class="dl new">新</span>' : '<span class="muted">—</span>');
+    const n = Math.round(c * 100);
+    const t = n === 0 ? '持平' : (n > 0 ? '↑' : '↓') + Math.abs(n) + '%';
+    return plain ? t : `<span class="dl ${n > 0 ? 'up' : n < 0 ? 'down' : ''}">${t}</span>`;
+  }
+  const cmpName = (R, base) => (base === 'year' ? `去年 ${+R.m.slice(5, 7)} 月` : '上月') + (R.cmp.upto ? '同期' : '');
   function viewMonth(el, m) {
     cur.month = m;
     const R = monthData(m);
@@ -392,6 +499,8 @@
     const top = R.rows[0];
     const maxD = Math.max(1, ...R.rows.map((r) => r.qty));
     const isCur = m === t.slice(0, 7);
+    const C = R.cmp[cmpBase], cn = cmpName(R, cmpBase);
+    const avgOf = (x) => (x.days ? x.qty / x.days : 0);
     el.innerHTML = `
       <div class="page-head">
         <div class="datebar">
@@ -405,9 +514,9 @@
         <button class="btn primary" data-act="xlsx" ${R.qty ? '' : 'disabled'}>⬇ 匯出本月 Excel</button>
       </div>
       <div class="kpis">
-        ${kpi(`${+m.slice(5, 7)} 月總份數`, fmt(R.qty) + '<small> 份</small>', '', 'main', '🍽')}
-        ${kpi('有記錄天數', R.days + '<small> 天</small>', '', '', '🗓')}
-        ${kpi('平均每天', R.days ? fmt(R.qty / R.days) + '<small> 份</small>' : '—', '', '', '📈')}
+        ${kpi(`${+m.slice(5, 7)} 月總份數`, fmt(R.qty) + '<small> 份</small>', `${dlt(R.qty, C.qty)} 比${cn}（${fmt(C.qty)} 份）`, 'main', '🍽')}
+        ${kpi('有記錄天數', R.days + '<small> 天</small>', `${cn} ${C.days} 天`, '', '🗓')}
+        ${kpi('平均每天', R.days ? fmt(R.qty / R.days) + '<small> 份</small>' : '—', R.days ? `${dlt(avgOf(R), avgOf(C))} 比${cn}` : '', '', '📈')}
         ${kpi('賣最多', top ? esc(top.d.name) : '—', top ? fmt(top.qty) + ' 份' : '', 'best', '🏆')}
       </div>
       <section class="card">
@@ -416,11 +525,12 @@
           <div class="cal-g">${cells}</div></div>
       </section>
       <section class="card">
-        <div class="card-head"><h3>🏆 本月各菜品合計</h3><span class="muted sm">${R.rows.length} 道菜有賣</span></div>
-        ${R.rows.length ? `<div class="tbl-wrap"><table class="rank"><thead><tr><th class="c">#</th><th>菜品</th><th>分類</th><th class="r">份數</th><th class="share">佔比</th></tr></thead>
-        <tbody>${R.rows.map((r, i) => `<tr><td class="c"><span class="rk${i < 3 ? ' r' + (i + 1) : ''}">${i + 1}</span></td><td class="b">${esc(r.d.name || '未命名')}${r.d.deleted ? '<small class="tag">已刪除</small>' : ''}</td><td>${r.d.cat ? `<span class="chip">${esc(r.d.cat)}</span>` : ''}</td><td class="r b">${fmt(r.qty)}</td>
+        <div class="card-head"><h3>🏆 本月各菜品合計</h3><span class="muted sm">${R.rows.length} 道菜有賣${R.cmp.upto ? `・比較都只算 1～${R.cmp.upto} 日` : ''}</span><span class="sp"></span>
+          <div class="seg" role="group"><span class="seg-l">比較</span><button data-act="cmp" data-v="prev" class="${cmpBase === 'prev' ? 'on' : ''}">上個月</button><button data-act="cmp" data-v="year" class="${cmpBase === 'year' ? 'on' : ''}">去年同月</button></div></div>
+        ${R.rows.length ? `<div class="tbl-wrap"><table class="rank"><thead><tr><th class="c">#</th><th>菜品</th><th>分類</th><th class="r">份數</th><th class="r">${cn}</th><th class="r">增減</th><th class="share">佔比</th></tr></thead>
+        <tbody>${R.rows.map((r, i) => `<tr><td class="c"><span class="rk${i < 3 ? ' r' + (i + 1) : ''}">${i + 1}</span></td><td class="b">${esc(r.d.name || '未命名')}${r.d.deleted ? '<small class="tag">已刪除</small>' : ''}</td><td>${r.d.cat ? `<span class="chip">${esc(r.d.cat)}</span>` : ''}</td><td class="r b">${fmt(r.qty)}</td><td class="r muted">${C.byDish.get(r.d.id) ? fmt(C.byDish.get(r.d.id)) : '—'}</td><td class="r">${dlt(r.qty, C.byDish.get(r.d.id) || 0)}</td>
           <td class="share"><span class="track"><i style="width:${(r.qty / maxD * 100).toFixed(1)}%"></i></span><small>${(r.qty / R.qty * 100).toFixed(1)}%</small></td></tr>`).join('')}</tbody>
-        <tfoot><tr><td></td><td>合計</td><td></td><td class="r">${fmt(R.qty)}</td><td class="share"></td></tr></tfoot></table></div>`
+        <tfoot><tr><td></td><td>合計</td><td></td><td class="r">${fmt(R.qty)}</td><td class="r">${fmt(C.qty)}</td><td class="r">${dlt(R.qty, C.qty)}</td><td class="share"></td></tr></tfoot></table></div>`
         : `<p class="empty">這個月還沒有銷售紀錄。</p>`}
       </section>`;
     const go = (x) => { location.hash = '#/month/' + x; };
@@ -428,6 +538,7 @@
       const b = e.target.closest('[data-act]'); if (!b) return;
       const a = b.dataset.act;
       if (a === 'pdf') return runPdf(b, () => buildMonthPdf(R));
+      if (a === 'cmp') { cmpBase = b.dataset.v; const y = window.scrollY; viewMonth(el, m); window.scrollTo(0, y); return; }
       if (a === 'prev') go(addM(m, -1));
       else if (a === 'next') go(addM(m, 1));
       else if (a === 'cur') go(t.slice(0, 7));
@@ -442,6 +553,7 @@
   const dayQty = (v) => (v ? Object.values(v.items).reduce((s, e) => s + e.q, 0) : 0);
   const salesDays = () => Object.keys(db.sales).filter((k) => dayQty(db.sales[k]) > 0).sort();
   const plan = { n: 4, buf: 10, weeks: 8 };
+  const SO_BOOST = 0.2;
   // 依過去 n 個「同一個星期幾」有營業的日子平均；同星期幾還沒有紀錄時改用最近 n 天
   function forecast(date, n = plan.n, buf = plan.buf) {
     const all = salesDays().filter((k) => k < date);
@@ -451,11 +563,15 @@
     const used = new Set(ref.flatMap((k) => Object.keys(db.sales[k].items).filter((id) => db.sales[k].items[id].q > 0)));
     const list = liveDishes().filter((d) => !d.off || used.has(d.id));
     const rows = list.map((d) => {
-      const qs = ref.map((k) => qOf(db.sales[k], d.id));
-      const avg = qs.length ? qs.reduce((a, b) => a + b, 0) / qs.length : 0;
-      return { d, avg, max: qs.length ? Math.max(...qs) : 0, last: qs.length ? qs[qs.length - 1] : 0, sug: avg > 0 ? Math.ceil(avg * (1 + buf / 100)) : 0 };
+      const es = ref.map((k) => db.sales[k].items[d.id]);
+      const qs = es.map((e) => (e && e.q ? e.q : 0));
+      // 賣完的日子實際需求比賣出的多，份數多算 SO_BOOST
+      const adj = es.map((e) => (e && e.q ? (e.so ? e.q * (1 + SO_BOOST) : e.q) : 0));
+      const soN = es.filter((e) => e && e.q && e.so).length;
+      const avg = adj.length ? adj.reduce((a, b) => a + b, 0) / adj.length : 0;
+      return { d, avg, soN, max: qs.length ? Math.max(...qs) : 0, last: qs.length ? qs[qs.length - 1] : 0, sug: avg > 0 ? Math.ceil(avg * (1 + buf / 100)) : 0 };
     });
-    return { date, ref, same, n, buf, rows, total: rows.reduce((s, r) => s + r.sug, 0), avgTotal: rows.reduce((s, r) => s + r.avg, 0) };
+    return { date, ref, same, n, buf, rows, soN: rows.reduce((s, r) => s + r.soN, 0), total: rows.reduce((s, r) => s + r.sug, 0), avgTotal: rows.reduce((s, r) => s + r.avg, 0) };
   }
   // 最近 weeks 週、每個星期幾平均賣幾份（只算有記錄份數的日子，公休日不拉低平均）
   function weekdayStats(weeks = plan.weeks, end = today()) {
@@ -514,7 +630,7 @@
           <div class="opt"><span>多備</span>${seg('buf', [0, 10, 20], (v) => (v ? `+${v}%` : '不加'))}</div>
         </div>
         ${!F.ref.length ? '<p class="empty">還沒有銷售紀錄，記錄幾天之後就能預估。</p>' : `
-        <p class="hint pad${F.same ? '' : ' warn-t'}">${F.same ? `參考 ${F.ref.length} 個週${WD[wd]}：` : `還沒有週${WD[wd]}的紀錄，先用最近 ${F.ref.length} 天：`}${F.ref.slice().reverse().map(md).join('、')}</p>
+        <p class="hint pad${F.same ? '' : ' warn-t'}">${F.same ? `參考 ${F.ref.length} 個週${WD[wd]}：` : `還沒有週${WD[wd]}的紀錄，先用最近 ${F.ref.length} 天：`}${F.ref.slice().reverse().map(md).join('、')}${F.soN ? `<br>⏱ 有標記「賣完」的日子，那天的份數多算 ${SO_BOOST * 100}%（實際想買的人比賣出的多）。` : ''}</p>
         <div class="kpis k3 pad">
           ${kpi('建議總備量', fmt(F.total) + '<small> 份</small>', F.buf ? `平均再多備 ${F.buf}%` : '照平均', 'main', '🧾')}
           ${kpi('平均賣出', f1(F.avgTotal) + '<small> 份</small>', '', '', '📊')}
@@ -522,7 +638,7 @@
         </div>
         <div class="tbl-wrap"><table class="fc"><thead><tr><th>菜品</th><th class="r">平均</th><th class="r">上次</th><th class="r">最多</th><th class="r">建議備</th></tr></thead>
           <tbody>${[...byCat].map(([cat, rs], gi) => `<tr class="fg" style="--gc:var(--c${gi % 6 + 1})"><td colspan="5"><i class="dot"></i>${esc(cat)}<span>${fmt(rs.reduce((s, r) => s + r.sug, 0))} 份</span></td></tr>`
-            + rs.map((r) => `<tr class="fr${r.sug ? '' : ' z'}"><td>${esc(r.d.name || '未命名')}${r.d.off ? '<small class="tag">停售</small>' : ''}</td><td class="r">${f1(r.avg)}</td><td class="r muted">${r.last}</td><td class="r muted">${r.max}</td><td class="r"><b class="sug">${r.sug || '—'}</b></td></tr>`).join('')).join('')}</tbody>
+            + rs.map((r) => `<tr class="fr${r.sug ? '' : ' z'}"><td>${esc(r.d.name || '未命名')}${r.d.off ? '<small class="tag">停售</small>' : ''}${r.soN ? `<small class="tag sot">賣完 ${r.soN} 次</small>` : ''}</td><td class="r">${f1(r.avg)}</td><td class="r muted">${r.last}</td><td class="r muted">${r.max}</td><td class="r"><b class="sug">${r.sug || '—'}</b></td></tr>`).join('')).join('')}</tbody>
           <tfoot><tr><td>合計</td><td class="r">${f1(F.avgTotal)}</td><td></td><td></td><td class="r">${fmt(F.total)}</td></tr></tfoot></table></div>`}
       </section>
       <section class="card" id="wk">
@@ -603,7 +719,7 @@
     const top = R.rows[0];
     const page = `<div class="rp">
       ${rpHead(title, `${m.replace('-', '/')}/01 ～ ${m.replace('-', '/')}/${R.n}`)}
-      <div class="rp-ks">${rpKpi('本月總份數', fmt(R.qty) + ' 份')}${rpKpi('有記錄天數', R.days + ' 天')}${rpKpi('平均每天', R.days ? fmt(R.qty / R.days) + ' 份' : '—')}${rpKpi('賣最多', top ? esc(top.d.name) + `（${fmt(top.qty)}）` : '—')}</div>
+      <div class="rp-ks">${rpKpi('本月總份數', fmt(R.qty) + ' 份')}${rpKpi('有記錄天數', R.days + ' 天')}${rpKpi('平均每天', R.days ? fmt(R.qty / R.days) + ' 份' : '—')}${rpKpi(`比${cmpName(R, 'prev')}`, dlt(R.qty, R.cmp.prev.qty, true))}${rpKpi('賣最多', top ? esc(top.d.name) + `（${fmt(top.qty)}）` : '—')}</div>
       <div class="rp-row">
         <div class="rp-box rp-cal"><h2>每日份數</h2><div class="rp-g">${['一', '二', '三', '四', '五', '六', '日'].map((x, i) => `<div class="rp-wh${i >= 5 ? ' we' : ''}">${x}</div>`).join('')}${cells}</div></div>
         <div class="rp-box rp-wk"><h2>星期平均</h2>${W.by.map((b) => `<div class="rp-wr${b.w % 6 === 0 ? ' we' : ''}"><span>週${WD[b.w]}</span><span class="rp-bar"><i style="width:${(b.avg / maxW * 100).toFixed(0)}%"></i></span><b>${b.n ? fmt(b.avg) : '—'}</b></div>`).join('')}
@@ -623,7 +739,7 @@
       <div class="rp-ks">${rpKpi('建議總備量', fmt(F.total) + ' 份')}${rpKpi('平均賣出', f1(F.avgTotal) + ' 份')}${rpKpi('要備的菜', F.rows.filter((r) => r.sug).length + ' 道')}</div>
       <table class="rp-t rp-fc"><thead><tr><th>菜品</th><th class="r">平均</th><th class="r">上次</th><th class="r">最多</th><th class="r">建議備</th><th class="c">實際備</th><th class="c">賣完時間</th></tr></thead>
         <tbody>${[...byCat].map(([cat, rs]) => `<tr class="rp-cat"><td colspan="7">${esc(cat)}　<small>${fmt(rs.reduce((s, r) => s + r.sug, 0))} 份</small></td></tr>`
-          + rs.map((r) => `<tr><td><b>${esc(r.d.name || '未命名')}</b></td><td class="r">${f1(r.avg)}</td><td class="r">${r.last}</td><td class="r">${r.max}</td><td class="r big">${r.sug || '—'}</td><td class="wr"></td><td class="wr"></td></tr>`).join('')).join('')}</tbody>
+          + rs.map((r) => `<tr><td><b>${esc(r.d.name || '未命名')}</b>${r.soN ? `<small class="rp-so">賣完${r.soN}次</small>` : ''}</td><td class="r">${f1(r.avg)}</td><td class="r">${r.last}</td><td class="r">${r.max}</td><td class="r big">${r.sug || '—'}</td><td class="wr"></td><td class="wr"></td></tr>`).join('')).join('')}</tbody>
         <tfoot><tr><td>合計</td><td class="r">${f1(F.avgTotal)}</td><td></td><td></td><td class="r big">${fmt(F.total)}</td><td></td><td></td></tr></tfoot></table>
       <div class="rp-sign"><span>備料人：</span><span>確認：</span></div>
     </div>`;
@@ -649,13 +765,21 @@
       ['匯出時間', new Date().toLocaleString('zh-TW', { hour12: false })],
       ['總份數', R.qty], ['有記錄天數', R.days],
       [],
-      ['排名', '菜品', '分類', '份數', '佔比'].map((v) => ({ v, s: B })),
-      ...R.rows.map((r, i) => [i + 1, r.d.name + (r.d.deleted ? '（已刪除）' : ''), r.d.cat, r.qty, { v: R.qty ? r.qty / R.qty : 0, s: 3 }]),
-      [null, { v: '合計', s: B }, null, { v: R.qty, s: B }, null],
+      ['排名', '菜品', '分類', '份數', '佔比', cmpName(R, 'prev'), '比上月', cmpName(R, 'year'), '比去年'].map((v) => ({ v, s: B })),
+      ...R.rows.map((r, i) => {
+        const pq = R.cmp.prev.byDish.get(r.d.id) || 0, yq = R.cmp.year.byDish.get(r.d.id) || 0;
+        const pc = pctCh(r.qty, pq), yc = pctCh(r.qty, yq);
+        return [i + 1, r.d.name + (r.d.deleted ? '（已刪除）' : ''), r.d.cat, r.qty, { v: R.qty ? r.qty / R.qty : 0, s: 3 }, pq || null, pc == null ? null : { v: pc, s: 3 }, yq || null, yc == null ? null : { v: yc, s: 3 }];
+      }),
+      [null, { v: '合計', s: B }, null, { v: R.qty, s: B }, null, { v: R.cmp.prev.qty, s: B }, pctCh(R.qty, R.cmp.prev.qty) == null ? null : { v: pctCh(R.qty, R.cmp.prev.qty), s: 3 }, { v: R.cmp.year.qty, s: B }, pctCh(R.qty, R.cmp.year.qty) == null ? null : { v: pctCh(R.qty, R.cmp.year.qty), s: 3 }],
     ];
+    const sold = [];
+    for (const k of days) for (const [id, e] of Object.entries(db.sales[k].items)) if (e.q && e.so) { const d = dishById(id); sold.push([k, '週' + WD[pd(k).getDay()], d ? d.name : '（已移除的菜）', d ? d.cat : '', e.q, e.so, e.by || null]); }
+    sold.sort((a, b) => (a[0] + a[5] < b[0] + b[5] ? -1 : 1));
     return [
       { name: '每日銷量', rows: daily, cols: [12, 6, ...dishes.map((d) => Math.max(8, Math.min(16, d.name.length * 2 + 2))), 10, 24], freeze: 3 },
-      { name: '菜品合計', rows: sum, cols: [12, 20, 10, 8, 9] },
+      { name: '菜品合計', rows: sum, cols: [12, 20, 10, 8, 9, 12, 9, 14, 9] },
+      ...(sold.length ? [{ name: '售完紀錄', rows: [[{ v: `${shop} ${title} 售完紀錄`, s: B }], [], ['日期', '星期', '菜品', '分類', '份數', '賣完時間', '記錄人'].map((v) => ({ v, s: B })), ...sold], cols: [12, 6, 18, 10, 8, 10, 12], freeze: 3 }] : []),
     ];
   }
   const fname = (s) => s.replace(/[\\/:*?"<>|]/g, '_');
@@ -717,15 +841,16 @@
       const out = { dishes: [], sales: [], notes: [] };
       for (const d of db.dishes) if (d.at > since) out.dishes.push(d);
       for (const [k, v] of Object.entries(db.sales)) {
-        for (const [id, e] of Object.entries(v.items)) if (e.at > since) out.sales.push({ d: k, id, q: e.q, p: e.p, c: e.c, at: e.at });
+        for (const [id, e] of Object.entries(v.items)) if (e.at > since) out.sales.push({ d: k, id, q: e.q, p: e.p, c: e.c, at: e.at, so: e.so || '', by: e.by || '' });
         if (v.noteAt > since) out.notes.push({ d: k, note: v.note, at: v.noteAt });
       }
       if (db.shopAt > since) out.shop = { v: db.shop, at: db.shopAt };
+      if (db.lock.at > since) out.settings = { v: JSON.stringify({ lock: { days: db.lock.days, pin: db.lock.pin } }), at: db.lock.at };
       return out;
     },
     pending() {
       const c = this.changes(db.cloud.pushedAt);
-      return c.dishes.length + c.sales.length + c.notes.length + (c.shop ? 1 : 0);
+      return c.dishes.length + c.sales.length + c.notes.length + (c.shop ? 1 : 0) + (c.settings ? 1 : 0);
     },
     merge(r) {
       let ch = false;
@@ -738,12 +863,15 @@
       for (const x of r.sales || []) {
         if (!x || !validYmd(x.d) || !x.id) continue;
         const day = dayOf(x.d, true), l = day.items[x.id];
-        if (!l || num(x.at) > l.at) { day.items[x.id] = { q: Math.max(0, Math.floor(num(x.q))), p: num(x.p), c: num(x.c), at: num(x.at) }; ch = true; }
+        if (!l || num(x.at) > l.at) { day.items[x.id] = entry(Math.max(0, Math.floor(num(x.q))), num(x.p), num(x.c), num(x.at), x.so, x.by); ch = true; }
       }
       for (const x of r.notes || []) {
         if (!x || !validYmd(x.d)) continue;
         const day = dayOf(x.d, true);
         if (num(x.at) > day.noteAt) { day.note = String(x.note || ''); day.noteAt = num(x.at); ch = true; }
+      }
+      if (r.settings && num(r.settings.at) > db.lock.at) {
+        try { const v = JSON.parse(r.settings.v || '{}'); if (v.lock) { db.lock = normLock({ ...v.lock, at: r.settings.at }); ch = true; } } catch (e) { /* 格式不對就略過 */ }
       }
       if (r.shop && num(r.shop.at) > db.shopAt) { db.shop = String(r.shop.v || ''); db.shopAt = num(r.shop.at); renderShop(); ch = true; }
       return ch;
@@ -838,7 +966,7 @@
         if (!mode || mode === 'cancel') return null;
       }
     }
-    if (mode === 'replace') db = blank();
+    if (mode === 'replace') { const me = db.me; db = blank(); db.me = me; }
     db.cloud = c;
     if (r.sheet) c.sheet = r.sheet;
     await flush();
@@ -875,6 +1003,17 @@
       <div class="page-head"><h2>菜品與設定</h2></div>
       <section class="card form">
         <label>🏪 店名（顯示在標題與匯出檔名）<input id="shopname" value="${esc(db.shop)}" placeholder="例如：阿明小吃店"></label>
+      </section>
+      <section class="card form">
+        ${(() => { const k = (() => { try { const a = window.KitchenAuth && window.KitchenAuth.get(); return a && a.me && a.me.name; } catch (e) { return ''; } })();
+          return k ? `<label>👤 修改紀錄的名字</label><p class="muted" style="margin:6px 0 0">目前用廚房專用表格系統登入的名字：<b>${esc(k)}</b></p>`
+            : `<label>👤 這台裝置的使用者（記在修改紀錄裡）<input id="me" value="${esc(db.me)}" maxlength="40" placeholder="例如：王小明"></label>`; })()}
+      </section>
+      <section class="card" id="lockcard">
+        <div class="card-head"><h3>🔒 鎖定過去的紀錄</h3>${lockOn() ? `<span class="chip on">${lockText(db.lock.days)}</span>` : ''}</div>
+        <p class="muted pad">避免不小心改到以前的份數。鎖定後，比較早的日子只能查看，要輸入主管密碼才能修改（清除、還原資料也要密碼）。${on ? '設定會同步到所有連線的裝置。' : ''}${kitchenAdmin() ? '你是廚房系統的管理者，不受鎖定限制。' : ''}</p>
+        <div class="pad opt"><span>鎖定</span><div class="seg" role="group">${[[0, '不鎖定'], [1, '只能改今天'], [3, '最近 3 天'], [7, '最近 7 天']].map(([n, t]) => `<button data-act="lockdays" data-v="${n}" class="${(lockOn() ? db.lock.days : 0) === n ? 'on' : ''}">${t}</button>`).join('')}</div></div>
+        ${lockOn() ? '<div class="btns pad" style="margin-top:12px"><button class="btn" data-act="lockpin">修改主管密碼</button><button class="btn" data-act="lockforgot">忘記主管密碼</button></div>' : ''}
       </section>
       <section class="card" id="dishes">
         <div class="card-head"><h3>🍱 菜品清單</h3><span class="muted sm">${live.length} 道菜・${catList().length} 個分類</span><div class="sp"></div>
@@ -930,6 +1069,7 @@
     el.oninput = (e) => {
       const t = e.target;
       if (t.id === 'shopname') { db.shop = t.value.trim(); db.shopAt = now(); renderShop(); save(); return; }
+      if (t.id === 'me') { db.me = t.value.trim().slice(0, 40); save(); return; }
       const f = t.dataset.f; if (!f) return;
       const li = t.closest('li'), d = dishById(li.dataset.id);
       if (f === 'name') { if (!t.value.trim()) return; d.name = t.value.trim(); }
@@ -946,6 +1086,7 @@
       }
       if (f === 'cat') { $('#catlist').innerHTML = catList().map((x) => `<option value="${esc(x)}">`).join(''); return; }
       if (e.target.id !== 'restore' || !e.target.files[0]) return;
+      if (!(await askPin('還原備份需要主管密碼'))) { e.target.value = ''; return; }
       try {
         const d = norm(JSON.parse(await e.target.files[0].text()));
         const n = Object.values(d.sales).filter(dayHasData).length;
@@ -958,6 +1099,7 @@
           if (d.shop) d.shopAt = t;
           d.cloud = db.cloud;
         } else delete d.cloud;
+        d.me = db.me;
         db = d; await flush(); renderShop(); viewSettings(el); toast('已還原備份');
         Cloud.schedule(200);
       } catch (err) { alert('無法讀取備份：' + err.message); } finally { e.target.value = ''; }
@@ -1019,22 +1161,55 @@
       } else if (a === 'backup') {
         const copy = { ...db }; delete copy.cloud;
         await saveFile(JSON.stringify(copy, null, 1), fname(`${db.shop ? db.shop + '_' : ''}菜品銷售備份_${today().replace(/-/g, '')}.json`), 'application/json');
+      } else if (a === 'lockdays') {
+        const n = +b.dataset.v;
+        if (n === (lockOn() ? db.lock.days : 0)) return;
+        if (!(await askPin('修改鎖定設定需要主管密碼'))) return;
+        let pin = lockOn() ? db.lock.pin : '';
+        if (n > 0 && !pin) {
+          const p1 = await askText('設定主管密碼', 'password', '', '4～8 位數字。解鎖過去的紀錄時要輸入這組密碼。');
+          if (p1 == null) return;
+          if (!/^\d{4,8}$/.test(p1)) return alert('主管密碼請輸入 4～8 位數字');
+          if ((await askText('再輸入一次主管密碼', 'password')) !== p1) return alert('兩次輸入不一樣，沒有設定');
+          pin = await pinHash(p1);
+        }
+        db.lock = { days: n, pin: n > 0 ? pin : '', at: now() };
+        save(); viewSettings(el); toast(n ? `已鎖定：${lockText(n)}` : '已取消鎖定');
+      } else if (a === 'lockpin') {
+        if (!(await askPin('請輸入目前的主管密碼'))) return;
+        const p1 = await askText('新的主管密碼', 'password', '', '4～8 位數字');
+        if (p1 == null) return;
+        if (!/^\d{4,8}$/.test(p1)) return alert('主管密碼請輸入 4～8 位數字');
+        if ((await askText('再輸入一次新密碼', 'password')) !== p1) return alert('兩次輸入不一樣，沒有修改');
+        db.lock = { ...db.lock, pin: await pinHash(p1), at: now() };
+        save(); toast('主管密碼已修改');
+      } else if (a === 'lockforgot') {
+        if (Cloud.on()) {
+          const p = await askText('輸入雲端同步密碼來取消鎖定', 'password', '', '忘記主管密碼時，用雲端同步密碼取消鎖定，再重新設定。');
+          if (p == null) return;
+          if (p !== db.cloud.pw) return alert('雲端同步密碼不對');
+        } else if (prompt('忘記主管密碼：確定要取消鎖定請輸入「取消鎖定」') !== '取消鎖定') return;
+        db.lock = { days: 0, pin: '', at: now() };
+        save(); viewSettings(el); toast('已取消鎖定，可以重新設定');
       } else if (a === 'clearsales') {
         if (!days.length) return toast('沒有銷售紀錄');
+        if (!(await askPin('清除銷售紀錄需要主管密碼'))) return;
         if (prompt(`將刪除全部 ${days.length} 天的銷售紀錄${Cloud.on() ? '（雲端也會一起清除）' : ''}，無法復原。\n確定請輸入「清除」：`) !== '清除') return;
         if (Cloud.on()) {
           const t = now();
           for (const v of Object.values(db.sales)) {
-            for (const x of Object.values(v.items)) if (x.q) { x.q = 0; x.at = t; }
+            for (const x of Object.values(v.items)) if (x.q) { x.q = 0; delete x.so; x.at = t; }
             if (v.note) { v.note = ''; v.noteAt = t; }
           }
         } else { db.sales = {}; db.dishes = db.dishes.filter((d) => !d.deleted); }
         save(); viewSettings(el); toast('已清除銷售紀錄');
       } else if (a === 'reset') {
         if (Cloud.on()) return toast('請先中斷雲端連線');
+        if (!(await askPin('全部重設需要主管密碼'))) return;
         if (prompt('將刪除全部菜品與銷售紀錄，並恢復範例菜品，無法復原。\n確定請輸入「重設」：') !== '重設') return;
         const keep = db.cloud;
-        db = seed(); if (keep) db.cloud = keep;
+        const me = db.me;
+        db = seed(); db.me = me; if (keep) db.cloud = keep;
         save(); renderShop(); viewSettings(el); toast('已重設');
       }
     };
