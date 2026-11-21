@@ -1,7 +1,7 @@
 /* 菜品銷售紀錄 — 每天賣了哪些菜、各幾份；每月合計（PWA 與桌面版共用） */
 (() => {
   'use strict';
-  const VERSION = '2.3.0';
+  const VERSION = '2.4.0';
   const DESK = new URLSearchParams(location.search).has('desktop');
 
   // ------------------------------------------------------------------ 工具
@@ -197,7 +197,7 @@
 
   // ------------------------------------------------------------------ 路由
   // 舊網址 #/menu → 設定、#/report → 每月合計（首頁或書籤的舊連結仍可用）
-  const VIEWS = ['day', 'month', 'plan', 'settings'];
+  const VIEWS = ['day', 'month', 'plan', 'insight', 'settings'];
   const cur = { view: '', date: today(), month: today().slice(0, 7) };
   function route() {
     const h = location.hash.replace(/^#\/?/, '').split('/');
@@ -210,6 +210,7 @@
     cur.view = v;
     if (v === 'month') viewMonth(el, /^\d{4}-\d{2}$/.test(h[1] || '') ? h[1] : cur.month);
     else if (v === 'settings') viewSettings(el);
+    else if (v === 'insight') viewInsight(el);
     else if (v === 'plan') viewPlan(el, validYmd(h[1] || '') ? h[1] : addD(today(), 1));
     else viewDay(el, validYmd(h[1] || '') ? h[1] : today());
   }
@@ -552,10 +553,11 @@
   const wdi = (k) => (pd(k).getDay() + 6) % 7; // 0=週一 … 6=週日
   const dayQty = (v) => (v ? Object.values(v.items).reduce((s, e) => s + e.q, 0) : 0);
   const salesDays = () => Object.keys(db.sales).filter((k) => dayQty(db.sales[k]) > 0).sort();
-  const plan = { n: 4, buf: 10, weeks: 8 };
+  const plan = { n: 4, buf: 10, weeks: 8, auto: false };
   const SO_BOOST = 0.2;
   // 依過去 n 個「同一個星期幾」有營業的日子平均；同星期幾還沒有紀錄時改用最近 n 天
-  function forecast(date, n = plan.n, buf = plan.buf) {
+  function forecast(date, n = plan.n, buf = plan.buf, auto = plan.auto) {
+    const C = auto ? corrections() : null;
     const all = salesDays().filter((k) => k < date);
     let ref = all.filter((k) => pd(k).getDay() === pd(date).getDay()).slice(-n);
     const same = ref.length > 0;
@@ -569,7 +571,8 @@
       const adj = es.map((e) => (e && e.q ? (e.so ? e.q * (1 + SO_BOOST) : e.q) : 0));
       const soN = es.filter((e) => e && e.q && e.so).length;
       const avg = adj.length ? adj.reduce((a, b) => a + b, 0) / adj.length : 0;
-      return { d, avg, soN, max: qs.length ? Math.max(...qs) : 0, last: qs.length ? qs[qs.length - 1] : 0, sug: avg > 0 ? Math.ceil(avg * (1 + buf / 100)) : 0 };
+      const corr = C ? (C.get(d.id) || 1) : 1, fc = avg * corr;
+      return { d, avg, fc, corr, soN, max: qs.length ? Math.max(...qs) : 0, last: qs.length ? qs[qs.length - 1] : 0, sug: fc > 0 ? Math.ceil(fc * (1 + buf / 100)) : 0 };
     });
     return { date, ref, same, n, buf, rows, soN: rows.reduce((s, r) => s + r.soN, 0), total: rows.reduce((s, r) => s + r.sug, 0), avgTotal: rows.reduce((s, r) => s + r.avg, 0) };
   }
@@ -603,6 +606,7 @@
   const f1 = (n) => (n >= 10 || n === 0 ? fmt(n) : n.toFixed(1));
   const md = (k) => `${+k.slice(5, 7)}/${+k.slice(8)}`;
   function seg(k, vals, unit) {
+    if (k === 'buf' && !vals.includes(plan.buf)) vals = [...vals, plan.buf].sort((a, b) => a - b);
     return `<div class="seg" role="group">${vals.map((v) => `<button data-act="set" data-k="${k}" data-v="${v}" class="${plan[k] === v ? 'on' : ''}">${unit(v)}</button>`).join('')}</div>`;
   }
   function viewPlan(el, date) {
@@ -628,6 +632,7 @@
           </div>
           <div class="opt"><span>參考最近</span>${seg('n', [4, 6, 8], (v) => `${v} 次`)}</div>
           <div class="opt"><span>多備</span>${seg('buf', [0, 10, 20], (v) => (v ? `+${v}%` : '不加'))}</div>
+          ${plan.auto ? '<a class="opt chip on" href="#/insight" title="到進階分析關閉">🎯 自動修正中</a>' : ''}
         </div>
         ${!F.ref.length ? '<p class="empty">還沒有銷售紀錄，記錄幾天之後就能預估。</p>' : `
         <p class="hint pad${F.same ? '' : ' warn-t'}">${F.same ? `參考 ${F.ref.length} 個週${WD[wd]}：` : `還沒有週${WD[wd]}的紀錄，先用最近 ${F.ref.length} 天：`}${F.ref.slice().reverse().map(md).join('、')}${F.soN ? `<br>⏱ 有標記「賣完」的日子，那天的份數多算 ${SO_BOOST * 100}%（實際想買的人比賣出的多）。` : ''}</p>
@@ -638,7 +643,7 @@
         </div>
         <div class="tbl-wrap"><table class="fc"><thead><tr><th>菜品</th><th class="r">平均</th><th class="r">上次</th><th class="r">最多</th><th class="r">建議備</th></tr></thead>
           <tbody>${[...byCat].map(([cat, rs], gi) => `<tr class="fg" style="--gc:var(--c${gi % 6 + 1})"><td colspan="5"><i class="dot"></i>${esc(cat)}<span>${fmt(rs.reduce((s, r) => s + r.sug, 0))} 份</span></td></tr>`
-            + rs.map((r) => `<tr class="fr${r.sug ? '' : ' z'}"><td>${esc(r.d.name || '未命名')}${r.d.off ? '<small class="tag">停售</small>' : ''}${r.soN ? `<small class="tag sot">賣完 ${r.soN} 次</small>` : ''}</td><td class="r">${f1(r.avg)}</td><td class="r muted">${r.last}</td><td class="r muted">${r.max}</td><td class="r"><b class="sug">${r.sug || '—'}</b></td></tr>`).join('')).join('')}</tbody>
+            + rs.map((r) => `<tr class="fr${r.sug ? '' : ' z'}"><td>${esc(r.d.name || '未命名')}${r.d.off ? '<small class="tag">停售</small>' : ''}${r.soN ? `<small class="tag sot">賣完 ${r.soN} 次</small>` : ''}${r.corr !== 1 ? `<small class="tag fix" title="依最近 4 週誤差自動修正">修正 ${r.corr > 1 ? '↑' : '↓'}${Math.round(Math.abs(r.corr - 1) * 100)}%</small>` : ''}</td><td class="r">${f1(r.avg)}</td><td class="r muted">${r.last}</td><td class="r muted">${r.max}</td><td class="r"><b class="sug">${r.sug || '—'}</b></td></tr>`).join('')).join('')}</tbody>
           <tfoot><tr><td>合計</td><td class="r">${f1(F.avgTotal)}</td><td></td><td></td><td class="r">${fmt(F.total)}</td></tr></tfoot></table></div>`}
       </section>
       <section class="card" id="wk">
@@ -658,10 +663,376 @@
       const a = b.dataset.act;
       if (a === 'prev') go(addD(date, -1));
       else if (a === 'next') go(addD(date, 1));
-      else if (a === 'set') { plan[b.dataset.k] = +b.dataset.v; const y = window.scrollY; viewPlan(el, date); window.scrollTo(0, y); }
+      else if (a === 'set') { plan[b.dataset.k] = +b.dataset.v; if (b.dataset.k === 'buf') LS.set('buf', plan.buf); const y = window.scrollY; viewPlan(el, date); window.scrollTo(0, y); }
       else if (a === 'fcpdf') await runPdf(b, () => buildForecastPdf(F));
     };
     el.onchange = (e) => { if (e.target.id === 'pdate' && validYmd(e.target.value)) go(e.target.value); };
+  }
+
+  // ------------------------------------------------------------------ 進階分析（只用現有的份數、單價、賣完時間）
+  const LS = {
+    get(k, d) { try { const v = localStorage.getItem('dishsales.' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem('dishsales.' + k, JSON.stringify(v)); } catch (e) { /* 無痕模式 */ } },
+  };
+  plan.buf = Math.min(60, Math.max(0, Math.round(num(LS.get('buf', 10)))));
+  plan.auto = !!LS.get('auto', false);
+  const ins = { days: 84, ym: 'qty' };
+  const dishOf = (id) => dishById(id) || { id, name: '（已移除的菜）', cat: '', deleted: true };
+  const inRange = (days, end) => { const s = addD(end, -days + 1); return salesDays().filter((k) => k >= s && k <= end); };
+  const hm2m = (t) => +t.slice(0, 2) * 60 + +t.slice(3);
+  const m2hm = (m) => `${pad(Math.floor(m / 60))}:${pad(Math.round(m % 60))}`;
+  const pctTxt = (x) => `${x > 0 ? '+' : ''}${Math.round(x * 100)}%`;
+  function pearson(xs, ys) {
+    const n = xs.length; if (n < 3) return 0;
+    const mx = xs.reduce((a, b) => a + b, 0) / n, my = ys.reduce((a, b) => a + b, 0) / n;
+    let sxy = 0, sxx = 0, syy = 0;
+    for (let i = 0; i < n; i++) { const a = xs[i] - mx, b = ys[i] - my; sxy += a * b; sxx += a * a; syy += b * b; }
+    return sxx && syy ? sxy / Math.sqrt(sxx * syy) : 0;
+  }
+
+  // 1. 預估準確度：把過去每一天「當時會算出的預估（不加安全量）」和實際賣出對照
+  function accuracy(days = 28, end = addD(today(), -1), auto = false) {
+    const per = new Map(); const ratios = [];
+    let fT = 0, aT = 0, absDay = 0, absDish = 0, n = 0, hit = 0, cnt = 0;
+    for (const k of inRange(days, end)) {
+      const F = forecast(k, plan.n, 0, auto);
+      if (!F.ref.length) continue;
+      const v = db.sales[k], fm = new Map(F.rows.map((r) => [r.d.id, r.fc]));
+      const ids = new Set([...fm.keys(), ...Object.keys(v.items).filter((id) => v.items[id].q > 0)]);
+      let fs = 0, as = 0;
+      for (const id of ids) {
+        const f = fm.get(id) || 0, e = v.items[id], a = e && e.q ? e.q : 0;
+        if (!f && !a) continue;
+        let p = per.get(id); if (!p) per.set(id, p = { d: dishOf(id), n: 0, f: 0, a: 0, abs: 0, short: 0, so: 0 });
+        p.n++; p.f += f; p.a += a; p.abs += Math.abs(f - a);
+        if (a > f) p.short++;
+        if (e && e.so) p.so++;
+        fs += f; as += a; absDish += Math.abs(f - a);
+        if (f >= 1) { ratios.push(a / f); cnt++; if (a <= Math.ceil(f * (1 + plan.buf / 100)) && !(e && e.so)) hit++; }
+      }
+      fT += fs; aT += as; absDay += Math.abs(fs - as); n++;
+    }
+    const rows = [...per.values()].filter((p) => p.n >= 3 && p.a > 0).map((p) => ({ ...p, err: p.abs / p.a, bias: (p.f - p.a) / p.a, corr: p.f > 0 ? Math.min(1.3, Math.max(0.7, p.a / p.f)) : 1 }));
+    ratios.sort((a, b) => a - b);
+    const p80 = ratios.length ? ratios[Math.min(ratios.length - 1, Math.floor(ratios.length * 0.8))] : 1;
+    const sugBuf = Math.min(40, Math.max(0, Math.ceil((p80 - 1) * 100 / 5) * 5));
+    return {
+      days: n, end, dayAcc: aT ? Math.max(0, 1 - absDay / aT) : 0, dishAcc: aT ? Math.max(0, 1 - absDish / aT) : 0,
+      bias: aT ? (fT - aT) / aT : 0, hitRate: cnt ? hit / cnt : 0, sugBuf, rows,
+      over: rows.filter((r) => r.bias >= 0.15).sort((a, b) => b.bias - a.bias),
+      under: rows.filter((r) => r.bias <= -0.15).sort((a, b) => a.bias - b.bias),
+    };
+  }
+  // 每道菜的自動修正倍數（最近 4 週預估偏高就少備、偏低就多備，最多 ±30%）
+  let corrCache = { key: '', map: new Map() };
+  function corrections() {
+    const key = today() + '|' + plan.n + '|' + salesDays().length + '|' + Object.values(db.sales).reduce((s, v) => s + Object.values(v.items).reduce((t, e) => t + e.q + e.at % 997, 0), 0);
+    if (corrCache.key !== key) {
+      const A = accuracy(28, addD(today(), -1), false);
+      corrCache = { key, map: new Map(A.rows.filter((r) => r.n >= 4).map((r) => [r.d.id, r.corr])) };
+    }
+    return corrCache.map;
+  }
+
+  // 2. 菜單結構 ABC：依份數由多到少累計，前 80% 是 A、到 95% 是 B、其餘 C
+  function abc(days = ins.days, end = today()) {
+    const m = new Map(); let tot = 0, rev = 0;
+    const ds = inRange(days, end);
+    for (const k of ds) {
+      for (const [id, e] of Object.entries(db.sales[k].items)) {
+        if (!e.q) continue;
+        const r = m.get(id) || { q: 0, rev: 0, days: 0 };
+        r.q += e.q; r.rev += e.q * e.p; r.days++; m.set(id, r); tot += e.q; rev += e.q * e.p;
+      }
+    }
+    for (const d of liveDishes()) if (!d.off && !m.has(d.id) && ds.length) m.set(d.id, { q: 0, rev: 0, days: 0 });
+    const rows = [...m].map(([id, r]) => ({ d: dishOf(id), ...r })).sort((a, b) => b.q - a.q || a.d.name.localeCompare(b.d.name, 'zh-Hant'));
+    let cum = 0;
+    for (const r of rows) { const before = tot ? cum / tot : 1; cum += r.q; r.share = tot ? r.q / tot : 0; r.cum = tot ? cum / tot : 0; r.cls = r.q && before < 0.8 ? 'A' : r.q && before < 0.95 ? 'B' : 'C'; }
+    const cnt = (c) => rows.filter((r) => r.cls === c);
+    const A = cnt('A'), B = cnt('B'), C = cnt('C');
+    return { days: ds.length, tot, rev, rows, A, B, C, aShare: A.reduce((s, r) => s + r.q, 0) / (tot || 1), hasRev: rev > 0,
+      drop: C.filter((r) => !r.d.deleted && !r.d.off) };
+  }
+
+  // 3. 趨勢警示：最近 4 週和前 4 週比（都用「有營業的日子平均」），最近 7 天突然掉很多另外提醒
+  function trends(end = addD(today(), -1)) {
+    const ds = salesDays();
+    const s1 = addD(end, -27), s0 = addD(end, -55), w = addD(end, -6);
+    const cur = ds.filter((k) => k >= s1 && k <= end), prev = ds.filter((k) => k >= s0 && k < s1);
+    const last = cur.filter((k) => k >= w), before = cur.filter((k) => k < w);
+    const avgOf = (days, id) => (days.length ? days.reduce((s, k) => s + qOf(db.sales[k], id), 0) / days.length : 0);
+    const tot = (days) => (days.length ? days.reduce((s, k) => s + dayQty(db.sales[k]), 0) / days.length : 0);
+    const weeks = [...Array(8)].map((_, i) => { const e = addD(end, -7 * (7 - i)), s = addD(e, -6); return ds.filter((k) => k >= s && k <= e); });
+    const ok = cur.length >= 3 && prev.length >= 3;
+    const rows = [];
+    if (ok) {
+      for (const d of liveDishes()) {
+        if (d.off) continue;
+        const a = avgOf(cur, d.id), b = avgOf(prev, d.id);
+        if (!a && !b) continue;
+        const r = { d, a, b, ch: b ? a / b - 1 : null, spark: weeks.map((x) => avgOf(x, d.id)) };
+        const la = avgOf(last, d.id), bb = avgOf(before, d.id);
+        r.kind = b === 0 ? (a >= 1 ? 'new' : '') : r.ch >= 0.25 && a >= 1 ? 'up' : r.ch <= -0.25 && b >= 1 ? 'down' : '';
+        if (last.length >= 2 && before.length >= 3 && bb >= 2 && la <= bb * 0.6) { r.drop = la / bb - 1; r.la = la; r.bb = bb; }
+        rows.push(r);
+      }
+    }
+    return { ok, end, cur: cur.length, prev: prev.length, totA: tot(cur), totB: tot(prev),
+      up: rows.filter((r) => r.kind === 'up').sort((a, b) => b.ch - a.ch),
+      down: rows.filter((r) => r.kind === 'down').sort((a, b) => a.ch - b.ch),
+      fresh: rows.filter((r) => r.kind === 'new'), sudden: rows.filter((r) => r.drop != null).sort((a, b) => a.drop - b.drop) };
+  }
+
+  // 4. 售完損失：和之前同星期幾「沒賣完」的日子比，少賣的就是估計損失；至少算多 SO_BOOST
+  function soldOut(days = ins.days, end = today()) {
+    const all = salesDays(), per = new Map(), wdN = [0, 0, 0, 0, 0, 0, 0];
+    let ev = 0, lost = 0, lostRev = 0;
+    for (const k of inRange(days, end)) {
+      for (const [id, e] of Object.entries(db.sales[k].items)) {
+        if (!e.q || !e.so) continue;
+        const ok = (x) => { const y = db.sales[x].items[id]; return y && y.q > 0 && !y.so; };
+        const prior = all.filter((x) => x < k && x >= addD(k, -91));
+        let ref = prior.filter((x) => pd(x).getDay() === pd(k).getDay() && ok(x)).slice(-8);
+        if (ref.length < 2) ref = prior.filter(ok).slice(-8);
+        const base = ref.length ? ref.reduce((s, x) => s + db.sales[x].items[id].q, 0) / ref.length : 0;
+        const est = Math.max(1, Math.round(base - e.q), Math.round(e.q * SO_BOOST));
+        let p = per.get(id); if (!p) per.set(id, p = { d: dishOf(id), n: 0, lost: 0, rev: 0, times: [], last: '' });
+        p.n++; p.lost += est; p.rev += est * e.p; p.times.push(hm2m(e.so)); p.last = k;
+        ev++; lost += est; lostRev += est * e.p; wdN[wdi(k)]++;
+      }
+    }
+    const rows = [...per.values()].map((p) => ({ ...p, early: Math.min(...p.times), avgT: p.times.reduce((a, b) => a + b, 0) / p.times.length }))
+      .sort((a, b) => b.lost - a.lost || b.n - a.n);
+    return { ev, lost, lostRev, rows, wdN };
+  }
+
+  // 5. 新菜上市追蹤：開始記錄 2 週後才第一次出現、而且是最近 120 天內上市的菜
+  function newDishes(end = today()) {
+    const ds = salesDays(); if (!ds.length) return { rows: [] };
+    const firstOf = new Map();
+    for (const k of ds) for (const [id, e] of Object.entries(db.sales[k].items)) if (e.q > 0 && !firstOf.has(id)) firstOf.set(id, k);
+    const rows = [];
+    for (const [id, f] of firstOf) {
+      if (f <= addD(ds[0], 14) || f < addD(end, -120)) continue;
+      const d = dishById(id); if (!d || d.deleted) continue;
+      const span = ds.filter((k) => k >= f && k <= addD(f, 27) && k <= end);
+      const q = span.reduce((s, k) => s + qOf(db.sales[k], id), 0);
+      const avg = span.length ? q / span.length : 0;
+      const old = (x) => x.id !== id && (firstOf.get(x.id) || '9999') < f && span.some((k) => qOf(db.sales[k], x.id) > 0);
+      let peers = liveDishes().filter((x) => x.cat === d.cat && old(x)), same = true;
+      if (!peers.length) { peers = liveDishes().filter(old); same = false; }
+      const pAvg = peers.length && span.length ? span.reduce((s, k) => s + peers.reduce((t, x) => t + qOf(db.sales[k], x.id), 0), 0) / span.length / peers.length : 0;
+      const wk = [0, 1, 2, 3].map((i) => { const ks = span.filter((k) => k >= addD(f, i * 7) && k <= addD(f, i * 7 + 6)); return ks.length ? ks.reduce((s, k) => s + qOf(db.sales[k], id), 0) / ks.length : null; });
+      const age = Math.round((pd(end) - pd(f)) / 864e5) + 1;
+      const ratio = pAvg ? avg / pAvg : null;
+      const w = wk.filter((x) => x != null);
+      rows.push({ d, first: f, age, days: span.length, q, avg, pAvg, same, ratio, wk, grow: w.length >= 2 && w[0] ? w[w.length - 1] / w[0] - 1 : null,
+        verdict: ratio == null ? '' : ratio >= 1 ? 'good' : ratio >= 0.7 ? 'ok' : 'weak' });
+    }
+    return { rows: rows.sort((a, b) => (a.first < b.first ? 1 : -1)) };
+  }
+
+  // 6. 互相排擠：先扣掉「星期幾」的影響，再看兩道菜佔當天比例的相關係數；明顯負相關代表搶同一批客人
+  function cannibal(days = ins.days, end = today()) {
+    const ds = inRange(days, end);
+    const ids = [...new Set(ds.flatMap((k) => Object.keys(db.sales[k].items).filter((id) => db.sales[k].items[id].q > 0)))]
+      .filter((id) => { const d = dishById(id); return d && !d.deleted && !d.off; });
+    const res = new Map();
+    for (const id of ids) {
+      const sh = ds.map((k) => { const v = db.sales[k], t = dayQty(v), q = qOf(v, id); return q > 0 && t ? q / t : null; });
+      // 先扣掉前後 2 週的平均（慢慢變熱門或退流行不算排擠），再扣掉星期幾的平均
+      const loc = sh.map((x, i) => { if (x == null) return null; const lo = addD(ds[i], -14), hi = addD(ds[i], 14); let s = 0, c = 0; sh.forEach((y, j) => { if (y != null && ds[j] >= lo && ds[j] <= hi) { s += y; c++; } }); return x - s / c; });
+      const mean = [0, 1, 2, 3, 4, 5, 6].map((w) => { const xs = loc.filter((x, i) => x != null && wdi(ds[i]) === w); return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0; });
+      res.set(id, { sh: loc.map((x, i) => (x == null ? null : x - mean[wdi(ds[i])])), raw: ds.map((k) => qOf(db.sales[k], id)) });
+    }
+    const pairs = [];
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        const A = res.get(ids[i]), B = res.get(ids[j]), xs = [], ys = [], ia = [];
+        A.sh.forEach((x, t) => { if (x != null && B.sh[t] != null) { xs.push(x); ys.push(B.sh[t]); ia.push(t); } });
+        if (xs.length < 12) continue;
+        const r = pearson(xs, ys);
+        if (r > -0.45) continue;
+        // A 賣得比平常多的日子（前 1/3），B 平均比平常少幾份
+        const ord = ia.map((t, k) => [xs[k], t]).sort((a, b) => b[0] - a[0]).slice(0, Math.max(3, Math.floor(ia.length / 3))).map((x) => x[1]);
+        const bAll = ia.reduce((s, t) => s + B.raw[t], 0) / ia.length, bHi = ord.reduce((s, t) => s + B.raw[t], 0) / ord.length;
+        if (bHi > bAll * 0.9) continue; // 份數上看不出差別，不算
+        const a = dishById(ids[i]), b = dishById(ids[j]);
+        pairs.push({ a, b, r, n: xs.length, same: a.cat === b.cat, bAll, bHi });
+      }
+    }
+    return { days: ds.length, dishes: ids.length, pairs: pairs.sort((x, y) => x.r - y.r).slice(0, 8) };
+  }
+
+  // 7. 年度走勢：最近 12 個月，每月和去年同月比（用每天平均比較，營業天數不同也公平）
+  function yearTrend(m = today().slice(0, 7)) {
+    const ms = []; for (let i = 11; i >= 0; i--) ms.push(addM(m, -i));
+    const cm = today().slice(0, 7);
+    const rows = ms.map((x) => { const a = monthAgg(x), b = monthAgg(addM(x, -12)); return { m: x, qty: a.qty, days: a.days, avg: a.days ? a.qty / a.days : 0, ly: b.qty, lyDays: b.days, lyAvg: b.days ? b.qty / b.days : 0, part: x === cm }; });
+    const full = rows.filter((r) => r.days && !r.part);
+    const peak = full.length ? full.reduce((a, b) => (b.avg > a.avg ? b : a)) : null;
+    const low = full.length ? full.reduce((a, b) => (b.avg < a.avg ? b : a)) : null;
+    const both = rows.filter((r) => r.qty && r.ly); // 只比兩年都有資料的月份，才不會因為去年還沒開始記錄而失真
+    const tq = rows.reduce((s, r) => s + r.qty, 0);
+    const bq = both.reduce((s, r) => s + r.qty, 0), lq = both.reduce((s, r) => s + r.ly, 0);
+    return { rows, peak, low, tq, bq, lq, nb: both.length, hasLy: rows.some((r) => r.ly) };
+  }
+
+  function insightData() {
+    const end = addD(today(), -1);
+    return { A: accuracy(28, end, false), Aa: plan.auto ? accuracy(28, end, true) : null, B: abc(), T: trends(end), S: soldOut(), N: newDishes(), X: cannibal(), Y: yearTrend(), days: ins.days };
+  }
+  const spark = (vals) => { const mx = Math.max(...vals, 0.0001); return `<span class="spark" aria-hidden="true">${vals.map((v) => `<i style="height:${Math.max(6, v / mx * 100).toFixed(0)}%"></i>`).join('')}</span>`; };
+  const nm = (d) => `${esc(d.name || '未命名')}${d.deleted ? '<small class="tag">已刪除</small>' : d.off ? '<small class="tag">停售</small>' : ''}`;
+  const periodTxt = (n) => ({ 28: '最近 4 週', 84: '最近 12 週', 182: '最近半年' }[n] || `最近 ${n} 天`);
+  const ymTxt = (m) => `${+m.slice(5, 7)} 月`;
+  const VERD = { good: ['✅ 表現好', 'good'], ok: ['➖ 普通', 'ok'], weak: ['⚠ 偏弱', 'weak'] };
+
+  function viewInsight(el) {
+    const D = insightData();
+    const { A, B, T, S, N, X, Y } = D;
+    const pt = periodTxt(ins.days);
+    const accTxt = A.days ? Math.round(A.dishAcc * 100) + '<small> %</small>' : '—';
+    const alerts = T.down.length + T.sudden.length;
+    const maxY = Math.max(1, ...Y.rows.map((r) => (ins.ym === 'avg' ? Math.max(r.avg, r.lyAvg) : Math.max(r.qty, r.ly))));
+    const hasPrice = B.hasRev;
+    el.innerHTML = `
+      <div class="page-head"><h2>進階分析</h2><span class="sp"></span>
+        <div class="seg" role="group" aria-label="分析期間"><span class="seg-l">期間</span>${[28, 84, 182].map((v) => `<button data-act="days" data-v="${v}" class="${ins.days === v ? 'on' : ''}">${{ 28: '4 週', 84: '12 週', 182: '半年' }[v]}</button>`).join('')}</div>
+        <button class="btn primary" data-act="inspdf" ${salesDays().length ? '' : 'disabled'}>🖨 分析報告 PDF</button>
+      </div>
+      <div class="kpis">
+        ${kpi('預估準確度', accTxt, A.days ? `最近 ${A.days} 天・照 +${plan.buf}% 備料 ${Math.round(A.hitRate * 100)}% 夠用` : '資料還不夠', 'main', '🎯')}
+        ${kpi('A 類主力菜', B.A.length + '<small> 道</small>', B.tot ? `占 ${Math.round(B.aShare * 100)}% 銷量` : '', '', '🅰')}
+        ${kpi('趨勢警示', alerts + '<small> 道</small>', T.ok ? `📈 ${T.up.length} 道成長` : '要 8 週紀錄', alerts ? 'warn' : '', '📉')}
+        ${kpi('賣完少賣', fmt(S.lost) + '<small> 份</small>', S.ev ? `${pt}賣完 ${S.ev} 次${S.lostRev ? `・約 $${fmt(S.lostRev)}` : ''}` : `${pt}沒有賣完紀錄`, '', '⏱')}
+      </div>
+
+      <section class="card" id="acc">
+        <div class="card-head"><h3>🎯 備料預估準確度</h3><span class="muted sm">最近 4 週，每天「當時的預估平均」和實際賣出對照（到昨天）</span></div>
+        ${!A.days ? '<p class="empty">要先有幾週的紀錄，才能回頭檢查預估準不準。</p>' : `
+        <div class="kpis k3 pad">
+          ${kpi('每道菜準確度', Math.round(A.dishAcc * 100) + '<small> %</small>', '逐道菜誤差', '', '🥢')}
+          ${kpi('總量準確度', Math.round(A.dayAcc * 100) + '<small> %</small>', `整體${A.bias > 0.03 ? `估多 ${pctTxt(A.bias)}` : A.bias < -0.03 ? `估少 ${pctTxt(-A.bias).slice(1)}` : '差不多'}`, '', '🧾')}
+          ${kpi(`+${plan.buf}% 夠用率`, Math.round(A.hitRate * 100) + '<small> %</small>', '沒賣完、也沒超過建議量', '', '✅')}
+        </div>
+        <div class="pad tune">
+          <p class="insight">💡 要讓大約 8 成的情況都夠用，建議多備 <b>+${A.sugBuf}%</b>${A.sugBuf === plan.buf ? '（就是目前的設定）' : `，目前設定 +${plan.buf}%`}。</p>
+          <div class="btns">
+            ${A.sugBuf !== plan.buf ? `<button class="btn primary" data-act="usebuf" data-v="${A.sugBuf}">套用 +${A.sugBuf}%</button>` : ''}
+            <label class="sw"><input type="checkbox" data-act="auto" ${plan.auto ? 'checked' : ''}> 依每道菜的誤差自動修正備料（最多 ±30%）</label>
+          </div>
+          ${D.Aa ? `<p class="hint">開啟自動修正後，過去 4 週每道菜準確度會是 <b>${Math.round(D.Aa.dishAcc * 100)}%</b>（原本 ${Math.round(A.dishAcc * 100)}%）。</p>` : ''}
+        </div>
+        <div class="two">
+          <div><h4>⬆ 常常估太多（可以少備）</h4>${A.over.length ? `<ul class="lst">${A.over.slice(0, 6).map((r) => `<li><span>${nm(r.d)}</span><b class="dl new">多 ${Math.round(r.bias * 100)}%</b><small>預估 ${f1(r.f / r.n)}／實際 ${f1(r.a / r.n)}</small></li>`).join('')}</ul>` : '<p class="muted sm">沒有明顯估太多的菜 👍</p>'}</div>
+          <div><h4>⬇ 常常估太少（要多備）</h4>${A.under.length ? `<ul class="lst">${A.under.slice(0, 6).map((r) => `<li><span>${nm(r.d)}${r.so ? `<small class="tag sot">賣完 ${r.so} 次</small>` : ''}</span><b class="dl down">少 ${Math.round(-r.bias * 100)}%</b><small>預估 ${f1(r.f / r.n)}／實際 ${f1(r.a / r.n)}</small></li>`).join('')}</ul>` : '<p class="muted sm">沒有明顯估太少的菜 👍</p>'}</div>
+        </div>`}
+      </section>
+
+      <section class="card" id="abc">
+        <div class="card-head"><h3>🔤 菜單結構（ABC 分析）</h3><span class="muted sm">${pt}，${B.days} 天有營業</span></div>
+        ${!B.tot ? '<p class="empty">這段期間沒有銷售紀錄。</p>' : `
+        <p class="pad insight">🅰 <b>${B.A.length}</b> 道菜就賣了 <b>${Math.round(B.aShare * 100)}%</b> 的份數，這些是主力菜，絕對不能缺貨；
+          🅲 有 <b>${B.C.length}</b> 道菜合計只占 ${Math.round(B.C.reduce((s, r) => s + r.share, 0) * 100)}%${B.drop.length ? `，其中 ${B.drop.length} 道還在菜單上，可以考慮汰換或改良` : ''}。</p>
+        <div class="abcbar pad">${['A', 'B', 'C'].map((c) => { const s = B[c].reduce((t, r) => t + r.share, 0); return s > 0 ? `<i class="ab-${c.toLowerCase()}" style="flex:${s.toFixed(4)}"><b>${c}</b> ${B[c].length} 道・${Math.round(s * 100)}%</i>` : ''; }).join('')}</div>
+        <div class="tbl-wrap"><table class="abc"><thead><tr><th class="c">類</th><th>菜品</th><th class="r">份數</th>${hasPrice ? '<th class="r">營業額</th>' : ''}<th class="r">佔比</th><th class="r">累計</th><th class="r">賣出天數</th></tr></thead>
+          <tbody>${B.rows.map((r) => `<tr class="ab-${r.cls.toLowerCase()}"><td class="c"><span class="abk">${r.cls}</span></td><td class="b">${nm(r.d)}</td><td class="r b">${fmt(r.q)}</td>${hasPrice ? `<td class="r">${r.rev ? '$' + fmt(r.rev) : '—'}</td>` : ''}<td class="r">${(r.share * 100).toFixed(1)}%</td><td class="r muted">${(r.cum * 100).toFixed(0)}%</td><td class="r muted">${r.days} / ${B.days}</td></tr>`).join('')}</tbody></table></div>`}
+      </section>
+
+      <section class="card" id="trend">
+        <div class="card-head"><h3>📈 趨勢警示</h3><span class="muted sm">最近 4 週 vs 前 4 週（有營業的日子平均，到昨天）</span></div>
+        ${!T.ok ? '<p class="empty">要有大約 8 週的紀錄，才能比較趨勢。</p>' : `
+        <p class="pad insight">整體每天平均 <b>${fmt(T.totA)}</b> 份，前 4 週 ${fmt(T.totB)} 份（${dlt(T.totA, T.totB)}）。</p>
+        ${T.sudden.length ? `<div class="alert pad"><b>⚠ 最近 7 天突然下滑</b>${T.sudden.map((r) => `<span>${nm(r.d)}：每天 ${f1(r.la)} 份，之前 ${f1(r.bb)} 份（${Math.round(r.drop * 100)}%）</span>`).join('')}<small>可能是口味、份量、備料或擺放位置改變了，建議確認一下。</small></div>` : ''}
+        <div class="two">
+          <div><h4>📈 明顯成長</h4>${T.up.length ? `<ul class="lst">${T.up.slice(0, 8).map((r) => `<li><span>${nm(r.d)}</span>${spark(r.spark)}<b class="dl up">↑${Math.round(r.ch * 100)}%</b><small>${f1(r.b)} → ${f1(r.a)} 份/天</small></li>`).join('')}</ul>` : '<p class="muted sm">沒有成長超過 25% 的菜。</p>'}
+            ${T.fresh.length ? `<p class="muted sm">🆕 前 4 週沒賣、最近開始賣：${T.fresh.map((r) => esc(r.d.name)).join('、')}</p>` : ''}</div>
+          <div><h4>📉 明顯衰退</h4>${T.down.length ? `<ul class="lst">${T.down.slice(0, 8).map((r) => `<li><span>${nm(r.d)}</span>${spark(r.spark)}<b class="dl down">↓${Math.round(-r.ch * 100)}%</b><small>${f1(r.b)} → ${f1(r.a)} 份/天</small></li>`).join('')}</ul>` : '<p class="muted sm">沒有衰退超過 25% 的菜 👍</p>'}</div>
+        </div>
+        <p class="hint pad">小長條是最近 8 週、每週每天平均賣幾份。</p>`}
+      </section>
+
+      <section class="card" id="so">
+        <div class="card-head"><h3>⏱ 售完損失估算</h3><span class="muted sm">${pt}・和之前同星期幾沒賣完的日子比</span></div>
+        ${!S.ev ? '<p class="empty">這段期間沒有記錄「賣完」。在每日紀錄按 ⏱ 記下賣完時間，就能估計少賣多少。</p>' : `
+        <p class="pad insight">共賣完 <b>${S.ev}</b> 次，估計少賣 <b>${fmt(S.lost)}</b> 份${S.lostRev ? `，約 <b>$${fmt(S.lostRev)}</b>` : ''}。最常賣完的是 <b>${esc(S.rows[0].d.name)}</b>（${S.rows[0].n} 次，平均 ${m2hm(S.rows[0].avgT)} 賣完）。</p>
+        <div class="tbl-wrap"><table class="sot"><thead><tr><th>菜品</th><th class="r">賣完次數</th><th class="r">平均時間</th><th class="r">最早</th><th class="r">估計少賣</th>${S.lostRev ? '<th class="r">少賺</th>' : ''}<th class="r">最近一次</th></tr></thead>
+          <tbody>${S.rows.map((r) => `<tr><td class="b">${nm(r.d)}</td><td class="r">${r.n}</td><td class="r">${m2hm(r.avgT)}</td><td class="r muted">${m2hm(r.early)}</td><td class="r b">${fmt(r.lost)} 份</td>${S.lostRev ? `<td class="r">${r.rev ? '$' + fmt(r.rev) : '—'}</td>` : ''}<td class="r muted">${md(r.last)}</td></tr>`).join('')}</tbody></table></div>
+        <p class="hint pad">各星期幾賣完次數：${WDM.map((w, i) => `週${WD[w]} ${S.wdN[i]}`).join('・')}</p>`}
+      </section>
+
+      <section class="card" id="nd">
+        <div class="card-head"><h3>🆕 新菜上市追蹤</h3><span class="muted sm">最近 120 天上市的菜，前 4 週和同分類的舊菜比</span></div>
+        ${!N.rows.length ? '<p class="empty">最近沒有新菜。新增菜品並開始記錄後，這裡會追蹤它前 4 週的表現。</p>' : `
+        <div class="tbl-wrap"><table class="nd"><thead><tr><th>菜品</th><th>上市</th><th class="r">每天平均</th><th class="r">同類舊菜</th><th class="c">第 1～4 週</th><th>判斷</th></tr></thead>
+          <tbody>${N.rows.map((r) => `<tr><td class="b">${nm(r.d)}<small class="muted"> ${esc(r.d.cat)}</small></td><td>${md(r.first)}<small class="muted">・第 ${r.age} 天</small></td><td class="r b">${f1(r.avg)}</td><td class="r muted">${r.pAvg ? f1(r.pAvg) + (r.same ? '' : '*') : '—'}</td>
+            <td class="c">${spark(r.wk.map((x) => x || 0))}${r.grow != null ? ` <small class="dl ${r.grow > 0.05 ? 'up' : r.grow < -0.05 ? 'down' : ''}">${r.grow > 0.05 ? '漸升' : r.grow < -0.05 ? '漸降' : '持平'}</small>` : ''}</td>
+            <td>${r.verdict ? `<span class="vd ${VERD[r.verdict][1]}">${VERD[r.verdict][0]}</span> <small class="muted">${Math.round(r.ratio * 100)}%</small>` : '—'}${r.age < 28 ? '<small class="muted">（觀察中）</small>' : ''}</td></tr>`).join('')}</tbody></table></div>
+        <p class="hint pad">「同類舊菜」是同一分類、上市前就有在賣的菜，同一段期間每道每天平均；* 代表同分類沒有舊菜，改和全部舊菜比。達到 100% 以上算表現好，70% 以下偏弱。</p>`}
+      </section>
+
+      <section class="card" id="cn">
+        <div class="card-head"><h3>🔀 菜品互相排擠</h3><span class="muted sm">${pt}・已扣掉星期幾的影響</span></div>
+        ${X.days < 12 ? '<p class="empty">要有至少 12 天的紀錄才能分析。</p>' : !X.pairs.length ? `<p class="pad insight">👍 ${X.days} 天的紀錄裡，沒有發現明顯互相搶客人的菜。</p>` : `
+        <p class="pad insight">下面這些菜，<b>一道賣得比平常好，另一道通常就賣得比較差</b>，代表客人常常二選一。可以考慮不要同一天推出，或拉開口味、價位。</p>
+        <ul class="lst cn pad">${X.pairs.map((p) => `<li><span><b>${esc(p.a.name)}</b> ⇄ <b>${esc(p.b.name)}</b>${p.same ? '<small class="tag">同分類</small>' : ''}</span><b class="str ${p.r <= -0.7 ? 'hi' : ''}">${p.r <= -0.7 ? '強' : '中'}</b><small>${esc(p.a.name)} 賣得好的日子，${esc(p.b.name)} 平均 ${f1(p.bHi)} 份（平常 ${f1(p.bAll)}）・${p.n} 天</small></li>`).join('')}</ul>`}
+      </section>
+
+      <section class="card" id="yr">
+        <div class="card-head"><h3>📅 年度走勢</h3><span class="muted sm">最近 12 個月${Y.hasLy ? '，淡色是去年同月' : ''}</span><span class="sp"></span>
+          <div class="seg" role="group"><button data-act="ym" data-v="qty" class="${ins.ym === 'qty' ? 'on' : ''}">每月總份數</button><button data-act="ym" data-v="avg" class="${ins.ym === 'avg' ? 'on' : ''}">每天平均</button></div></div>
+        ${!Y.tq ? '<p class="empty">最近 12 個月沒有銷售紀錄。</p>' : `
+        ${Y.peak ? `<p class="pad insight">🔥 旺季：<b>${Y.peak.m.slice(0, 4)} 年 ${ymTxt(Y.peak.m)}</b>（每天 ${fmt(Y.peak.avg)} 份）${Y.low !== Y.peak ? `；🌙 淡季：<b>${Y.low.m.slice(0, 4)} 年 ${ymTxt(Y.low.m)}</b>（每天 ${fmt(Y.low.avg)} 份）` : ''}${Y.nb >= 3 ? `；兩年都有紀錄的 ${Y.nb} 個月，合計比去年 ${dlt(Y.bq, Y.lq)}` : ''}。</p>` : ''}
+        <div class="ybars pad">${Y.rows.map((r) => { const v = ins.ym === 'avg' ? r.avg : r.qty, l = ins.ym === 'avg' ? r.lyAvg : r.ly; const tip = `${r.m.slice(0, 4)} 年 ${ymTxt(r.m)}：${fmt(r.qty)} 份、${r.days} 天（每天 ${fmt(r.avg)} 份）${r.ly ? `；去年 ${fmt(r.ly)} 份（每天 ${fmt(r.lyAvg)}）` : ''}`; return `<div class="yb${r === Y.peak ? ' hi' : ''}${r.part ? ' part' : ''}" title="${tip}" data-act="ytip" data-tip="${tip}">
+            <span class="bv">${v ? fmt(v) : '—'}</span><div class="bt">${l ? `<em style="height:${(l / maxY * 100).toFixed(1)}%"></em>` : ''}<i style="height:${(v / maxY * 100).toFixed(1)}%"></i></div><b>${+r.m.slice(5, 7)}<span class="mo">月</span></b><small>${r.ly && r.lyAvg && r.avg ? dlt(r.avg, r.lyAvg) : r.part ? '進行中' : r.m.slice(2, 4) + '年'}</small></div>`; }).join('')}</div>
+        <p class="hint pad">和去年比較用「每天平均」，營業天數不同也公平；斜線是還沒過完的本月。點長條可看詳細數字。</p>`}
+      </section>`;
+    const again = () => { const y = window.scrollY; viewInsight(el); window.scrollTo(0, y); };
+    el.onclick = async (e) => {
+      const b = e.target.closest('[data-act]'); if (!b) return;
+      const a = b.dataset.act;
+      if (a === 'days') { ins.days = +b.dataset.v; again(); }
+      else if (a === 'ym') { ins.ym = b.dataset.v; again(); }
+      else if (a === 'ytip') toast(b.dataset.tip, 4000);
+      else if (a === 'usebuf') { plan.buf = +b.dataset.v; LS.set('buf', plan.buf); toast(`備料預估改成多備 +${plan.buf}%`); again(); }
+      else if (a === 'inspdf') await runPdf(b, () => buildInsightPdf(insightData()));
+    };
+    el.onchange = (e) => {
+      if (e.target.dataset.act === 'auto') { plan.auto = e.target.checked; LS.set('auto', plan.auto); toast(plan.auto ? '已開啟自動修正，備料分析頁的建議量會跟著調整' : '已關閉自動修正'); again(); }
+    };
+  }
+
+  async function buildInsightPdf(D) {
+    const { A, B, T, S, N, X, Y } = D;
+    const pt = periodTxt(D.days);
+    const box = (t, body) => `<div class="rp-box"><h2>${t}</h2>${body}</div>`;
+    const maxY = Math.max(1, ...Y.rows.map((r) => Math.max(r.qty, r.ly)));
+    const p1 = `<div class="rp">
+      ${rpHead('菜品進階分析報告', `${pt}（${addD(today(), -D.days + 1).replace(/-/g, '/')} ～ ${today().replace(/-/g, '/')}）`)}
+      <div class="rp-ks">${rpKpi('預估準確度', A.days ? Math.round(A.dishAcc * 100) + '%' : '—')}${rpKpi('建議多備', '+' + A.sugBuf + '%')}${rpKpi('A 類主力菜', `${B.A.length} 道（${Math.round(B.aShare * 100)}%）`)}${rpKpi('趨勢警示', (T.down.length + T.sudden.length) + ' 道')}${rpKpi('賣完少賣', fmt(S.lost) + ' 份')}</div>
+      ${box('🎯 備料預估準確度（最近 4 週）', A.days ? `<p class="rp-p">每道菜準確度 <b>${Math.round(A.dishAcc * 100)}%</b>，總量準確度 <b>${Math.round(A.dayAcc * 100)}%</b>；照目前 +${plan.buf}% 備料，${Math.round(A.hitRate * 100)}% 的情況夠用；要 8 成夠用建議 +${A.sugBuf}%。${plan.auto ? '（已開啟每道菜自動修正）' : ''}</p>
+        <div class="rp-cols"><div><b class="rp-mini">常估太多</b>${A.over.length ? A.over.slice(0, 6).map((r) => `<div class="rp-li">${esc(r.d.name)}<span>多 ${Math.round(r.bias * 100)}%</span></div>`).join('') : '<div class="rp-li">無</div>'}</div>
+        <div><b class="rp-mini">常估太少</b>${A.under.length ? A.under.slice(0, 6).map((r) => `<div class="rp-li">${esc(r.d.name)}<span>少 ${Math.round(-r.bias * 100)}%</span></div>`).join('') : '<div class="rp-li">無</div>'}</div></div>` : '<p class="rp-p">資料不足</p>')}
+      ${box(`🔤 菜單結構 ABC（${pt}）`, B.tot ? `<p class="rp-p">A 類 ${B.A.length} 道占 ${Math.round(B.aShare * 100)}%；B 類 ${B.B.length} 道；C 類 ${B.C.length} 道${B.drop.length ? `（可考慮汰換：${B.drop.slice(0, 8).map((r) => esc(r.d.name)).join('、')}）` : ''}。</p>
+        <table class="rp-t"><thead><tr><th>類</th><th>菜品</th><th class="r">份數</th>${B.hasRev ? '<th class="r">營業額</th>' : ''}<th class="r">佔比</th><th class="r">累計</th></tr></thead><tbody>${B.rows.slice(0, 24).map((r) => `<tr><td><b class="rp-abc ${r.cls}">${r.cls}</b></td><td>${esc(r.d.name)}</td><td class="r"><b>${fmt(r.q)}</b></td>${B.hasRev ? `<td class="r">${r.rev ? '$' + fmt(r.rev) : '—'}</td>` : ''}<td class="r">${(r.share * 100).toFixed(1)}%</td><td class="r">${(r.cum * 100).toFixed(0)}%</td></tr>`).join('')}</tbody></table>${B.rows.length > 24 ? `<p class="rp-p">…其餘 ${B.rows.length - 24} 道省略</p>` : ''}` : '<p class="rp-p">沒有紀錄</p>')}
+    </div>`;
+    const p2 = `<div class="rp">
+      ${rpHead('菜品進階分析報告（續）', pt)}
+      ${box('📈 趨勢警示（最近 4 週 vs 前 4 週）', T.ok ? `<p class="rp-p">整體每天 ${fmt(T.totA)} 份，前 4 週 ${fmt(T.totB)} 份（${dlt(T.totA, T.totB, true)}）。${T.sudden.length ? `<br>⚠ 最近 7 天突然下滑：${T.sudden.map((r) => `${esc(r.d.name)}（${Math.round(r.drop * 100)}%）`).join('、')}` : ''}</p>
+        <div class="rp-cols"><div><b class="rp-mini">明顯成長</b>${T.up.length ? T.up.slice(0, 8).map((r) => `<div class="rp-li">${esc(r.d.name)}<span>↑${Math.round(r.ch * 100)}%</span></div>`).join('') : '<div class="rp-li">無</div>'}</div>
+        <div><b class="rp-mini">明顯衰退</b>${T.down.length ? T.down.slice(0, 8).map((r) => `<div class="rp-li">${esc(r.d.name)}<span>↓${Math.round(-r.ch * 100)}%</span></div>`).join('') : '<div class="rp-li">無</div>'}</div></div>` : '<p class="rp-p">要有約 8 週紀錄</p>')}
+      ${box(`⏱ 售完損失（${pt}）`, S.ev ? `<p class="rp-p">賣完 ${S.ev} 次，估計少賣 <b>${fmt(S.lost)}</b> 份${S.lostRev ? `，約 $${fmt(S.lostRev)}` : ''}。</p>
+        <table class="rp-t"><thead><tr><th>菜品</th><th class="r">次數</th><th class="r">平均時間</th><th class="r">最早</th><th class="r">估計少賣</th></tr></thead><tbody>${S.rows.slice(0, 12).map((r) => `<tr><td>${esc(r.d.name)}</td><td class="r">${r.n}</td><td class="r">${m2hm(r.avgT)}</td><td class="r">${m2hm(r.early)}</td><td class="r"><b>${fmt(r.lost)}</b></td></tr>`).join('')}</tbody></table>` : '<p class="rp-p">沒有賣完紀錄</p>')}
+      <div class="rp-cols">
+        ${box('🆕 新菜上市追蹤', N.rows.length ? N.rows.slice(0, 8).map((r) => `<div class="rp-li">${esc(r.d.name)}（${md(r.first)}）<span>${f1(r.avg)} 份/天・${r.verdict ? VERD[r.verdict][0].slice(2) + ' ' + Math.round(r.ratio * 100) + '%' : '—'}</span></div>`).join('') : '<p class="rp-p">最近沒有新菜</p>')}
+        ${box('🔀 互相排擠', X.pairs.length ? X.pairs.slice(0, 8).map((p) => `<div class="rp-li">${esc(p.a.name)} ⇄ ${esc(p.b.name)}<span>${p.r <= -0.7 ? '強' : '中'}</span></div>`).join('') : '<p class="rp-p">沒有發現明顯互相排擠的菜</p>')}
+      </div>
+      ${box('📅 年度走勢（最近 12 個月，淡色為去年同月）', Y.tq ? `<div class="rp-yb">${Y.rows.map((r) => `<div><span>${r.qty ? fmt(r.qty) : ''}</span><div class="rp-yt">${r.ly ? `<em style="height:${(r.ly / maxY * 100).toFixed(0)}%"></em>` : ''}<i style="height:${(r.qty / maxY * 100).toFixed(0)}%"></i></div><b>${ymTxt(r.m)}</b></div>`).join('')}</div>
+        ${Y.peak ? `<p class="rp-p">旺季 ${Y.peak.m.replace('-', '/')}（每天 ${fmt(Y.peak.avg)} 份），淡季 ${Y.low.m.replace('-', '/')}（每天 ${fmt(Y.low.avg)} 份）</p>` : ''}` : '<p class="rp-p">沒有紀錄</p>')}
+    </div>`;
+    return [await htmlToPdf([p1, p2]), fname(`${db.shop ? db.shop + '_' : ''}進階分析_${today().replace(/-/g, '')}.pdf`)];
   }
 
   // ------------------------------------------------------------------ PDF（月報、備料單）：html2canvas 截圖成 A4
@@ -1057,7 +1428,7 @@
         </div>
         ${on ? '<p class="muted pad">連線雲端時「清除所有銷售紀錄」會連雲端一起清除。</p>' : ''}
       </section>
-      <p class="muted center">菜品銷售紀錄 v${VERSION}${DESK ? '（桌面版）' : ''}・快捷鍵 Alt+1～4 切換頁面</p>`;
+      <p class="muted center">菜品銷售紀錄 v${VERSION}${DESK ? '（桌面版）' : ''}・快捷鍵 Alt+1～5 切換頁面</p>`;
     if (DESK) api().then((x) => x.data_path()).then((p) => { const e = $('#dpath'); if (e) e.textContent = p; });
     const redrawList = (focusId, sel) => {
       $('#dlist').innerHTML = dishListHtml();
@@ -1239,7 +1610,7 @@
 
   // ------------------------------------------------------------------ 啟動
   document.addEventListener('keydown', (e) => {
-    if (e.altKey && !e.ctrlKey && /^[1-4]$/.test(e.key)) {
+    if (e.altKey && !e.ctrlKey && /^[1-5]$/.test(e.key)) {
       e.preventDefault();
       location.hash = '#/' + VIEWS[+e.key - 1];
     }
@@ -1263,6 +1634,6 @@
     }
   }
   // 測試用（廚房專用表格系統也會用 db / Cloud / connectCloud / flush）
-  window.__dish = { get db() { return db; }, flush, Cloud, connectCloud, demoData, monthData, forecast, weekdayStats, monthPdf: (m) => buildMonthPdf(monthData(m)), forecastPdf: (d) => buildForecastPdf(forecast(d || addD(today(), 1))), xlsxSheets, buildXlsx: (R) => b64(XLSXW.build(xlsxSheets(R || monthData()))), VERSION };
+  window.__dish = { get db() { return db; }, flush, Cloud, connectCloud, demoData, monthData, forecast, weekdayStats, insightData, insightPdf: () => buildInsightPdf(insightData()), monthPdf: (m) => buildMonthPdf(monthData(m)), forecastPdf: (d) => buildForecastPdf(forecast(d || addD(today(), 1))), xlsxSheets, buildXlsx: (R) => b64(XLSXW.build(xlsxSheets(R || monthData()))), VERSION };
   start();
 })();
