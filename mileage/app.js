@@ -1,7 +1,7 @@
 /* 公里及油資紀錄系統 — 網頁版與桌面版共用（桌面版網址帶 ?desktop=1，資料改存 %APPDATA%\MileageFuel） */
 (function () {
   'use strict';
-  const VERSION = '1.2.0';
+  const VERSION = '1.3.0';
   const M = window.Mileage;
   const LS_KEY = 'mileage.db';
   const DESKTOP = new URLSearchParams(location.search).has('desktop');
