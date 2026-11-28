@@ -9,6 +9,9 @@ import datetime as dt
 import functools
 import json
 import secrets
+import ssl
+import urllib.parse
+import urllib.request
 import os
 import subprocess
 import sys
@@ -44,6 +47,8 @@ MODULES = {
     "prep": (_APPDATA / "KitchenPrep", "備料交接日誌", None),  # 只在本系統裡，沒有單獨程式
     "sop": (_APPDATA / "KitchenSOP", "廚房SOP", "KitchenSOP_SingleInstance"),  # 和原本的廚房SOP程式同一份資料
     "equip": (_APPDATA / "ShebeiGuanjia", "設備管家", "ShebeiGuanjia_SingleInstance"),  # 和原本的設備管家程式同一份資料
+    "taxid": (_APPDATA / "TaxIdRecord", "統編紀錄系統", "TaxIdRecord_SingleInstance"),  # 和原本的統編紀錄系統同一份資料
+    "mileage": (_APPDATA / "MileageFuel", "公里及油資紀錄系統", "MileageFuel_SingleInstance"),  # 和原本的公里及油資紀錄系統同一份資料
 }
 # 設備管家的網頁用 /api/*（跟它原本的程式一樣）讀寫資料，要帶這個 token，其他網站才不能亂寫
 EQUIP_TOKEN = secrets.token_urlsafe(24)
@@ -56,6 +61,7 @@ FILE_TYPES = {
     ".jpg": "JPG 圖片 (*.jpg;*.jpeg)",
     ".csv": "CSV 檔 (*.csv)",
 }
+GCIS = "https://data.gcis.nat.gov.tw/od/data/api/5F64D864-61CB-4D0D-8AD9-492047CC1EA6"  # 統編紀錄系統的備援查詢
 MEAL_CANDIDATES = [
     EXE_DIR / MEAL_EXE_NAME,
     Path(r"E:\程式碼APP製作\VS CODE\員工餐金額總計\dist") / MEAL_EXE_NAME,
@@ -220,9 +226,27 @@ class Api:
 
     def open_url(self, url):
         """用預設瀏覽器開啟 Google 試算表；SOP 的標籤列印交給瀏覽器（WebView2 不能連藍牙／USB 印表機）"""
-        if not str(url).startswith(("https://docs.google.com/", "https://wu8858009.github.io/kitchen-sop/")):
+        if not str(url).startswith(("https://docs.google.com/", "https://wu8858009.github.io/kitchen-sop/", "https://www.google.com/maps/")):
             return False
         return webbrowser.open(url)
+
+    def lookup(self, no):
+        """統編紀錄系統：備援查詢，直接問經濟部商工登記 API（g0v 連不上時用；和原本的程式一樣）"""
+        no = "".join(c for c in str(no) if c.isdigit())
+        if len(no) != 8:
+            return None
+        q = urllib.parse.urlencode({"$format": "json", "$filter": f"Business_Accounting_NO eq {no}", "$skip": 0, "$top": 1})
+        try:
+            req = urllib.request.Request(f"{GCIS}?{q}", headers={"User-Agent": "Mozilla/5.0 KitchenForms"})
+            ctx = ssl.create_default_context()
+            # 政府網站憑證缺 Subject Key Identifier，Python 3.13 的嚴格模式會擋；只關嚴格旗標，憑證照樣驗證
+            ctx.verify_flags &= ~getattr(ssl, "VERIFY_X509_STRICT", 0)
+            with urllib.request.urlopen(req, timeout=10, context=ctx) as r:
+                body = r.read().decode("utf-8", "replace").strip()
+            data = json.loads(body) if body else []
+            return data[0] if data else None
+        except Exception as e:  # noqa: BLE001
+            return {"error": f"{type(e).__name__}: {e}"}
 
     def export_image(self, data_url, filename):
         """SOP：把標籤或照片存成圖片檔（PNG 或 JPG）"""
@@ -431,7 +455,8 @@ def _serve_site():
     """只綁本機的靜態伺服器；固定優先用同一個埠，網頁的 localStorage 才不會每次換一份"""
     handler = functools.partial(_QuietHandler, directory=str(SITE_DIR))
     httpd = None
-    for port in (47816, 47817, 47818, 0):
+    # 測試模式用隨機埠：Windows 上同一個埠可以被重複綁定，會連到使用者正在開的程式
+    for port in ((0,) if _TEST_ROOT else (47816, 47817, 47818, 0)):
         try:
             httpd = ThreadingHTTPServer(("127.0.0.1", port), handler)
             break
@@ -444,19 +469,106 @@ def _serve_site():
 _mutexes = []
 
 
+_NO_WINDOW = 0x08000000  # CREATE_NO_WINDOW
+
+
+def _pids_of(exe_name):
+    """正在執行的 exe_name（例如 設備管家.exe）的 PID 清單"""
+    try:
+        out = subprocess.run(["tasklist", "/FO", "CSV", "/NH", "/FI", f"IMAGENAME eq {exe_name}"],
+                             capture_output=True, text=True, encoding="mbcs", errors="replace",
+                             creationflags=_NO_WINDOW, timeout=10).stdout
+    except Exception:
+        return []
+    pids = []
+    for line in out.splitlines():
+        cols = [c.strip('"') for c in line.split('","')]
+        if len(cols) > 1 and cols[0].lower() == exe_name.lower() and cols[1].isdigit():
+            pids.append(int(cols[1]))
+    return [p for p in pids if p != os.getpid()]
+
+
+def _close_windows_of(pids):
+    """送「關閉」給這些程式的視窗（等同按右上角 X，讓它們自己存檔後結束）"""
+    user32 = ctypes.windll.user32
+    want = set(pids)
+    proto = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+
+    def cb(hwnd, _):
+        pid = ctypes.c_ulong()
+        user32.GetWindowThreadProcessId(ctypes.c_void_p(hwnd), ctypes.byref(pid))
+        if pid.value in want and user32.IsWindowVisible(ctypes.c_void_p(hwnd)):
+            user32.PostMessageW(ctypes.c_void_p(hwnd), 0x0010, 0, 0)  # WM_CLOSE
+        return True
+    user32.EnumWindows(proto(cb), 0)
+
+
+def _ask_equip_quit(folder):
+    """新版設備管家有 /api/quit：存好資料、收起系統匣圖示後結束"""
+    try:
+        import urllib.request
+        info = json.loads((folder / "instance.json").read_text(encoding="utf-8"))
+        req = urllib.request.Request(f"http://127.0.0.1:{int(info['port'])}/api/quit", data=b"{}",
+                                     headers={"X-SG-Token": info["token"]}, method="POST")
+        urllib.request.urlopen(req, timeout=3).read()
+        return True
+    except Exception:
+        return False
+
+
+def _stop_standalone(mod, label):
+    """結束原本的單獨程式；成功（已經沒有在執行）回傳 True"""
+    exe = f"{label}.exe"
+
+    def wait_gone(sec):
+        end = time.time() + sec
+        while time.time() < end:
+            if not _pids_of(exe):
+                return True
+            time.sleep(0.3)
+        return not _pids_of(exe)
+
+    if not _pids_of(exe):
+        return False  # 找不到程式（可能用別的檔名），只能請使用者自己關
+    if mod == "equip" and _ask_equip_quit(MODULES[mod][0]) and wait_gone(6):
+        return True
+    _close_windows_of(_pids_of(exe))
+    if wait_gone(5):
+        return True
+    pids = _pids_of(exe)  # 在背景（系統匣）裡沒有視窗可關的，直接結束
+    if pids:
+        subprocess.run(["taskkill", "/F", "/T"] + sum([["/PID", str(p)] for p in pids], []),
+                       capture_output=True, creationflags=_NO_WINDOW, timeout=15)
+    return wait_gone(5)
+
+
 def _single_instance():
-    """本程式只開一個；原本的冰箱／菜品單獨程式開著時不能同時開（避免兩邊同時寫同一份資料）"""
+    """本程式只開一個；原本的冰箱／菜品／SOP／設備管家單獨程式開著時，
+    先問要不要幫忙關掉它（避免兩邊同時寫同一份資料）"""
     if _TEST_ROOT:
         return True
     k32 = ctypes.windll.kernel32
-    names = [("KitchenForms_SingleInstance", None)] + [(m[2], m[1]) for m in MODULES.values() if m[2]]
-    for name, label in names:
+    msgbox = ctypes.windll.user32.MessageBoxW
+    names = [("KitchenForms_SingleInstance", None, None)] + \
+        [(m[2], m[1], mod) for mod, m in MODULES.items() if m[2]]
+    for name, label, mod in names:
         h = k32.CreateMutexW(None, False, name)
         if k32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
-            msg = "廚房專用表格系統已經在執行中。" if label is None else \
-                f"「{label}」單獨程式正在執行。\n\n請先關閉它，再開啟廚房專用表格系統（避免兩邊同時寫入同一份資料）。"
-            ctypes.windll.user32.MessageBoxW(None, msg, APP_TITLE, 0x40)
-            return False
+            if label is None:
+                msgbox(None, "廚房專用表格系統已經在執行中。", APP_TITLE, 0x40)
+                return False
+            bg = "（它可能藏在右下角系統匣，在背景執行）" if mod == "equip" else ""
+            ans = msgbox(None, f"「{label}」單獨程式正在執行{bg}。\n\n"
+                               f"它和廚房專用表格系統共用同一份資料，不能同時開。\n\n"
+                               f"要幫你關閉「{label}」，然後繼續開啟嗎？\n"
+                               f"（選「否」可以先自己去關閉它）", APP_TITLE, 0x24)  # 是/否 + 問號
+            if ans != 6:  # IDYES
+                return False
+            if not _stop_standalone(mod, label):
+                msgbox(None, f"沒辦法自動關閉「{label}」。\n\n請在右下角系統匣的圖示上按右鍵 →「結束」，"
+                             f"或從工作管理員結束它，再開啟廚房專用表格系統。", APP_TITLE, 0x30)
+                return False
+            # 我們拿到的這個 handle 會讓這個名稱一直存在，原本的程式之後就打不開（不會兩邊同時寫）
         _mutexes.append(h)
     return True
 
@@ -564,17 +676,30 @@ def _selftest(out_path):
         result["equip_home_btn"] = bool(js("!!document.querySelector('.kn-home')"))
         js("document.querySelector('.kn-home').click()")
         result["back_home_5"] = wait("window.__kitchen && window.__kitchen.summary && 'equip' in window.__kitchen.summary ? 1 : 0")
+        # 統編紀錄系統、公里及油資紀錄系統：原封不動放進來，資料跟原本的程式同一份
+        for mod, glob in (("taxid", "__taxid"), ("mileage", "__mf")):
+            js(f"document.querySelector('.card.{mod} .btn').click()")
+            result[f"{mod}_loaded"] = wait(f"window.{glob} && window.{glob}.db ? 1 : 0")
+            result[f"{mod}_path"] = wait("window.pywebview && window.pywebview.api ? window.pywebview.api.data_path() : ''")
+            js(f"window.{glob}.flush()")
+            time.sleep(1.0)
+            result[f"{mod}_saved"] = _data_file(mod).exists()
+            result[f"{mod}_home_btn"] = bool(js("!!document.querySelector('.kn-home')"))
+            js("document.querySelector('.kn-home').click()")
+            result[f"{mod}_back"] = wait("document.querySelector('#cards .card') ? 1 : 0")
+            time.sleep(0.5)
         time.sleep(0.3)
         result["kpis"] = js("[...document.querySelectorAll('.kpi')].map(e => e.innerText.replace(/\\n/g, ' '))")
         result["window"] = [_window.x, _window.y, _window.width, _window.height]
         fs = json.loads(result["fridge_summary"] or "null") or {}
         ds = json.loads(result["dish_summary"] or "null") or {}
         ps = json.loads(result.get("prep_summary") or "null") or {}
-        result["ok"] = bool(result["home_cards"] == 7 and ps.get("done", 0) >= 2 and ps.get("sign") and result["prep_pdf"] and result["prep_saved"] and result["fridge_loaded"] and result["fridge_home_btn"]
+        result["ok"] = bool(result["home_cards"] == 9 and ps.get("done", 0) >= 2 and ps.get("sign") and result["prep_pdf"] and result["prep_saved"] and result["fridge_loaded"] and result["fridge_home_btn"]
                             and result["fridge_saved_today"] and fs.get("done", 0) >= 1 and result["fridge_pdf"] and result["fridge_sheet_vi"]
                             and result["dish_loaded"] and ds.get("t", {}).get("q", 0) >= 3
                             and result["sop_recipes"] and result["sop_saved"] and result["sop_home_btn"] and result["back_home_4"]
-                            and result["equip_desktop"] and result["equip_saved"] and result["equip_home_btn"] and result["back_home_5"])
+                            and result["equip_desktop"] and result["equip_saved"] and result["equip_home_btn"] and result["back_home_5"]
+                            and all(result[f"{m}_{k}"] for m in ("taxid", "mileage") for k in ("loaded", "saved", "home_btn", "back")))
     except Exception as e:  # noqa: BLE001
         result["error"] = repr(e)
     Path(out_path).write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")

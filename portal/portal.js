@@ -1,7 +1,7 @@
 /* 廚房專用表格系統 — 首頁儀表板：冰箱溫度、備料交接、菜品銷售、員工餐四個系統的入口與今日重點 */
 (() => {
   'use strict';
-  const VERSION = '1.13.0';
+  const VERSION = '1.14.0';
   const DESK = new URLSearchParams(location.search).has('desktop');
   const Q = DESK ? '?desktop=1' : '';
   const $ = (s, r = document) => r.querySelector(s);
@@ -49,11 +49,13 @@
   async function loadLocal() {
     if (DESK) {
       const r = parse(await (await api()).dash()) || {};
-      return { fridge: parse(r.fridge), dish: parse(r.dish), prep: parse(r.prep), sop: parse(r.sop), equip: parse(r.equip), meal: parse(r.meal), mealInfo: r.meal_info || {} };
+      return { fridge: parse(r.fridge), dish: parse(r.dish), prep: parse(r.prep), sop: parse(r.sop), equip: parse(r.equip), taxid: parse(r.taxid), mileage: parse(r.mileage), meal: parse(r.meal), mealInfo: r.meal_info || {} };
     }
     const [f, d, p, so, eq] = await Promise.all([idbGet('fridgetemp'), idbGet('dishsales'), idbGet('kitchenprep'), idbGet('kitchen-sop'), idbGet('shebei-guanjia', 'sg_db')]);
-    return { fridge: parse(f), dish: parse(d), prep: parse(p), sop: parse(so), equip: parse(eq) };
+    return { fridge: parse(f), dish: parse(d), prep: parse(p), sop: parse(so), equip: parse(eq), taxid: parse(lsGet('taxid.db')), mileage: parse(lsGet('mileage.db')) };
   }
+  // 統編紀錄、公里及油資：資料存在 localStorage（跟它們原本的網站同一份）
+  const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
   // 員工餐：上次從雲端算好的摘要先顯示，背景更新完再換上
   const LS_MEALC = 'kitchenforms-meal-cache';
   const mealCache = () => { try { return JSON.parse(localStorage.getItem(LS_MEALC)) || null; } catch (e) { return null; } };
@@ -339,6 +341,50 @@
       `<a class="btn" href="equip/index.html${Q}" data-mod="equip">開啟</a><a class="btn sub" href="equip/index.html${Q}#/plans" data-mod="equip">保養</a>`);
   }
 
+  // ------------------------------------------------------------------ 統編紀錄系統（原封不動放進來）
+  function taxidSummary(db) {
+    if (!db || !Array.isArray(db.items)) return null;
+    const T = window.TaxId, L = db.items.filter((x) => x && !x.deleted);
+    const care = T ? L.filter((x) => T.badStatus(x.status) || !T.valid(x.no)).length : 0;
+    return { total: L.length, stars: L.filter((x) => x.star).length, care, cloud: !!(db.cloud && db.cloud.url) };
+  }
+  function taxidCard(s) {
+    let body;
+    if (!s || !s.total) body = '<p class="note">公司統一編號：輸入統編自動帶出公司名稱、負責人、地址與營業狀態，搜尋、複製、條碼、匯出 Excel。點「開啟」開始使用（跟原本的統編紀錄系統一模一樣）。</p>';
+    else body = `<div class="kpis">
+          <div class="kpi"><div class="l">統編筆數</div><div class="v">${s.total}<small> 筆</small></div></div>
+          <div class="kpi"><div class="l">★ 常用</div><div class="v">${s.stars}<small> 筆</small></div></div>
+          <div class="kpi ${s.care ? 'warn' : 'ok'}"><div class="l">⚠ 需注意</div><div class="v">${s.care}<small> 筆</small></div></div>
+        </div>${s.cloud ? '<p class="note">已連線 Google 雲端</p>' : ''}`;
+    return card('taxid', '🏢', '統編紀錄系統', '統編查詢・公司資料・條碼・匯出', body,
+      `<a class="btn" href="taxid/index.html${Q}" data-mod="taxid">開啟</a>`);
+  }
+
+  // ------------------------------------------------------------------ 公里及油資紀錄系統（原封不動放進來）
+  function mileageSummary(db, now) {
+    const M = window.Mileage;
+    if (!M || !db || !Array.isArray(db.trips)) return null;
+    const conf = db.conf || {}, cut = conf.cut || 25, live = (a) => (a || []).filter((x) => x && !x.deleted);
+    const pk = M.periodOf(ymd(now), cut), p = M.period(pk, cut);
+    const me = db.me && live(db.staff).find((x) => x.id === db.me);
+    const pick = (k) => live(db[k]).filter((r) => M.inPeriod(r.date, p) && (!me || r.sid === me.id));
+    const t = M.totals(pick('trips'), pick('fuel'), pick('park'), conf.rate == null ? 4 : conf.rate);
+    const left = Math.round((new Date(p.to + 'T00:00') - new Date(ymd(now) + 'T00:00')) / 864e5);
+    return { staff: live(db.staff).length, who: me ? me.name : '全部員工', label: M.periodLabel ? M.periodLabel(pk, cut) : pk, t, left };
+  }
+  function mileageCard(s) {
+    let body;
+    if (!s || !s.staff) body = '<p class="note">公出里程、加油、停車紀錄，自動算每公里補助，產生油資請領表（Excel）。點「開啟」開始使用（跟原本的公里及油資紀錄系統一模一樣）。</p>';
+    else body = `<div class="kpis">
+          <div class="kpi"><div class="l">本期公出</div><div class="v">${s.t.trips}<small> 趟</small></div></div>
+          <div class="kpi"><div class="l">本期里程</div><div class="v">${s.t.km}<small> km</small></div></div>
+          <div class="kpi ok"><div class="l">本期補貼</div><div class="v">$${money(s.t.total)}</div></div>
+        </div>
+        <p class="note">${esc(s.who)}・${esc(s.label)}・${s.left > 0 ? `距結算 ${s.left} 天` : '今天結算'}</p>`;
+    return card('mileage', '🚗', '公里及油資紀錄系統', '公出里程・加油・停車・請領表', body,
+      `<a class="btn" href="mileage/index.html${Q}" data-mod="mileage">開啟</a><a class="btn sub" href="mileage/index.html${Q}#/claim" data-mod="mileage">請領表</a>`);
+  }
+
   // ------------------------------------------------------------------ 今日重點（首頁最上面）
   function heroHtml(now, S) {
     const h = now.getHours();
@@ -428,7 +474,7 @@
     bgStarted = true;
   }
   // 只比資料本身（不比同步時間），沒變就不重畫
-  const snapOf = (d) => [d.fridge, d.dish, d.prep, d.sop, d.equip].map((x) => (x ? JSON.stringify(x, (k, v) => (k === 'cloud' || k === '_sync' || k === 'sync' || k === 'meAct' ? undefined : v)) : '-')).join('|');
+  const snapOf = (d) => [d.fridge, d.dish, d.prep, d.sop, d.equip, d.taxid, d.mileage].map((x) => (x ? JSON.stringify(x, (k, v) => (k === 'cloud' || k === '_sync' || k === 'sync' || k === 'meAct' ? undefined : v)) : '-')).join('|');
   // 每 3 秒看這台裝置的資料（原始文字沒變就不解析，很省電）；有變就更新首頁
   let lastRaw = '';
   // ------------------------------------------------------------------ 拖曳排列卡片
@@ -491,11 +537,11 @@
     try {
       if (DESK) { const d = await loadLocal(); if (snapOf(d) !== snap) render(); }
       else {
-        const raw = await Promise.all([idbGet('fridgetemp'), idbGet('dishsales'), idbGet('kitchenprep'), idbGet('kitchen-sop'), idbGet('shebei-guanjia', 'sg_db')]);
+        const raw = await Promise.all([idbGet('fridgetemp'), idbGet('dishsales'), idbGet('kitchenprep'), idbGet('kitchen-sop'), idbGet('shebei-guanjia', 'sg_db'), lsGet('taxid.db'), lsGet('mileage.db')]);
         const key = raw.map((x) => (x && typeof x === 'object' ? JSON.stringify(x) : x || '')).join('\u0001');
         if (key !== lastRaw) {
           lastRaw = key;
-          const d = { fridge: parse(raw[0]), dish: parse(raw[1]), prep: parse(raw[2]), sop: parse(raw[3]), equip: parse(raw[4]) };
+          const d = { fridge: parse(raw[0]), dish: parse(raw[1]), prep: parse(raw[2]), sop: parse(raw[3]), equip: parse(raw[4]), taxid: parse(raw[5]), mileage: parse(raw[6]) };
           if (snapOf(d) !== snap) render();
         }
       }
@@ -526,14 +572,14 @@
     let d;
     try { d = await loadLocal(); } catch (e) { d = {}; }
     last = d;
-    const fs = fridgeSummary(d.fridge, now), ds = dishSummary(d.dish, now), ps = prepSummary(d.prep, now), ss = sopSummary(d.sop, now), es = equipSummary(d.equip, now);
+    const fs = fridgeSummary(d.fridge, now), ds = dishSummary(d.dish, now), ps = prepSummary(d.prep, now), ss = sopSummary(d.sop, now), es = equipSummary(d.equip, now), ts = taxidSummary(d.taxid), mis = mileageSummary(d.mileage, now);
     const ms = DESK ? mealSummary(d.meal, now) : meal.s;
     const mi = DESK ? (d.mealInfo || {}) : { error: meal.error, loading: !meal.s && (meal.loading || (!meal.fetched && !!mealConf().pw)), at: meal.at, pw: !!mealConf().pw };
     const shop = (fs && fs.shop) || (ds && ds.shop) || '';
     const shopT = shop ? `${shop}・廚房表格` : '廚房專用表格系統';
     if ($('#shop').textContent !== shopT) $('#shop').textContent = shopT;
     // 只顯示這個人有權限的系統
-    const cards = [['fridge', () => fridgeCard(fs)], ['prep', () => prepCard(ps)], ['dish', () => dishCard(ds)], ['meal', () => mealCard(ms, mi)], ['sop', () => sopCard(ss)], ['equip', () => equipCard(es)], ['energy', () => energyCard()]].filter(([m]) => AUTH.can(m));
+    const cards = [['fridge', () => fridgeCard(fs)], ['prep', () => prepCard(ps)], ['dish', () => dishCard(ds)], ['meal', () => mealCard(ms, mi)], ['sop', () => sopCard(ss)], ['equip', () => equipCard(es)], ['energy', () => energyCard()], ['taxid', () => taxidCard(ts)], ['mileage', () => mileageCard(mis)]].filter(([m]) => AUTH.can(m));
     // 依這台裝置自己排的順序（拖曳卡片右上角的 ⠿）
     const ord = cardOrder(), at = (m, i) => { const k = ord.indexOf(m); return k < 0 ? 100 + i : k; };
     cards.forEach((c, i) => { c[2] = at(c[0], i); }); cards.sort((a, b) => a[2] - b[2]);
@@ -571,7 +617,7 @@
   $('#refresh').addEventListener('click', () => { render(true).then(() => toast('已更新')); });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'F5') { e.preventDefault(); render(); }
-    if (e.altKey && ['1', '2', '3', '4', '5', '6', '7'].includes(e.key)) { e.preventDefault(); const m = ({ 1: 'fridge', 2: 'dish', 3: 'meal', 4: 'prep', 5: 'sop', 6: 'equip', 7: 'energy' })[e.key]; if (AUTH.can(m)) location.href = m + `/index.html${Q}`; else toast('你沒有這個系統的權限'); }
+    if (e.altKey && ['1', '2', '3', '4', '5', '6', '7', '8', '9'].includes(e.key)) { e.preventDefault(); const m = ({ 1: 'fridge', 2: 'dish', 3: 'meal', 4: 'prep', 5: 'sop', 6: 'equip', 7: 'energy', 8: 'taxid', 9: 'mileage' })[e.key]; if (AUTH.can(m)) location.href = m + `/index.html${Q}`; else toast('你沒有這個系統的權限'); }
   });
   // 從各系統回到首頁、或切回這個視窗時更新數字
   document.addEventListener('visibilitychange', () => { if (!document.hidden) render(); });

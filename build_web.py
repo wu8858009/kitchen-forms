@@ -18,11 +18,15 @@ MODULES = {
     "sop": VSCODE / "廚房SOP食譜及倍數計算系統" / "web",
     "equip": VSCODE / "設備更換紀錄及價位",  # 網頁檔案直接放在專案資料夾
     "energy": VSCODE / "碧潭水電瓦斯抄表",  # 線上版（GitHub Pages）的網頁檔案
+    "taxid": VSCODE / "統編紀錄系統" / "web",
+    "mileage": VSCODE / "公里及油資資紀錄系統" / "web",  # 資料夾名稱原本就是「資資」
 }
+# 原封不動放進來的系統：不套統一暗色主題、不改 iPhone 狀態列，只加「首頁」按鈕與權限檢查
+RAW = {"taxid", "mileage"}
 # 只複製網頁需要的檔案（沒列的系統整個資料夾都複製）
 ONLY = {"equip": ["index.html", "manifest.webmanifest", "sw.js", "css", "js", "icons"], "energy": ["index.html", "manifest.json", "icons"]}
 # auth.js：人員權限（沒有權限的人由 kitchen-nav.js 送回首頁）
-NAV_TAG = '<script src="../auth.js?v=11"></script>\n<script src="../kitchen-nav.js?v=18"></script>'
+NAV_TAG = '<script src="../auth.js?v=12"></script>\n<script src="../kitchen-nav.js?v=19"></script>'
 # 統一暗色配色：在 <html> 標上 kf-dark kf-<系統>，再載入共用主題（要在各系統自己的樣式之後才蓋得過去）；
 # 設備管家、冰箱、菜品另外固定用它們自己的暗色模式（data-theme=dark）
 THEME_TAG = (
@@ -68,10 +72,11 @@ def build(out: Path = ROOT / "site") -> Path:
         idx = dst / "index.html"
         html = idx.read_text(encoding="utf-8")
         # iPhone 主畫面 App：狀態列用不透明黑底，畫面從狀態列下面開始（不會被時間、電量擋到，也沒有淡出）
-        html = html.replace('content="black-translucent"', 'content="black"')
-        if THEME_TAG not in html:
-            html = html.replace("</head>", f"{THEME_TAG}\n</head>", 1)
-        html = re.sub(r'<meta name="theme-color" content="[^"]*">', '<meta name="theme-color" content="#050b17">', html)
+        if name not in RAW:  # 原封不動的系統不改狀態列、不套統一暗色主題
+            html = html.replace('content="black-translucent"', 'content="black"')
+            if THEME_TAG not in html:
+                html = html.replace("</head>", f"{THEME_TAG}\n</head>", 1)
+            html = re.sub(r'<meta name="theme-color" content="[^"]*">', '<meta name="theme-color" content="#050b17">', html)
         if name == "energy":
             # 廚房版的抄表登入另外存（不跟原本的抄表網站共用同一個登入；兩個網站在同一個網域）
             a = 'const LS_CLOUD_TOKEN = "bitan_cloud_token";'

@@ -15,8 +15,8 @@
 
 const SH_PEOPLE = '人員權限';
 const SH_DEV = '登入裝置';
-const MODS = ['fridge', 'prep', 'dish', 'meal', 'sop', 'equip', 'energy'];
-const HEAD = ['姓名', '角色', '冰箱溫度', '備料交接', '菜品銷售', '員工餐', '廚房SOP', '設備管家', '水電瓦斯', '水電瓦斯權限', '水電瓦斯區域', '停用', 'PIN雜湊', '更新時間'];
+const MODS = ['fridge', 'prep', 'dish', 'meal', 'sop', 'equip', 'energy', 'taxid', 'mileage'];
+const HEAD = ['姓名', '角色', '冰箱溫度', '備料交接', '菜品銷售', '員工餐', '廚房SOP', '設備管家', '水電瓦斯', '統編紀錄', '公里油資', '水電瓦斯權限', '水電瓦斯區域', '停用', 'PIN雜湊', '更新時間'];
 // 水電瓦斯抄表每個人能看什麼：權限（查看／編輯／完整）＋區域（用「、」分開，空白＝全部區域）
 const EN_LV = { '查看': 'View', '編輯': 'Edit', '完整': 'Full' }, EN_LVN = { View: '查看', Edit: '編輯', Full: '完整' };
 function enRead_(lv, g) { return { lv: EN_LV[String(lv == null ? '' : lv).trim()] || 'Edit', g: String(g == null ? '' : g).split(/[、,，\n]+/).map((x) => x.trim()).filter(Boolean) }; }
