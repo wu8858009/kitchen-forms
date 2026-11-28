@@ -1,0 +1,8 @@
+{
+  "version": "1.2.0",
+  "notes": "新增自動更新：網頁版與電腦版有新版時自動更新並重新開啟",
+  "date": "2026-11-27",
+  "exe": "https://github.com/wu8858009/mileage-fuel/releases/download/v1.2.0/MileageFuel-1.2.0.exe",
+  "sha256": "6f5add8e5714e39f5ac73fa4b113b92b75eba3ed7cf68ed93daa556d50b46aed",
+  "size": 20353780
+}

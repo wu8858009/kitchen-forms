@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b1f3a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="油資紀錄">
+<meta name="description" content="記錄公出里程、加油與停車費，自動計算補貼並產生油資/停車費補貼請領表">
+<title>公里及油資紀錄系統 PRO</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="styles.css?v=3">
+</head>
+<body>
+<div id="splash" class="splash" aria-hidden="true">
+  <div class="spl-in">
+    <svg class="spl-road" viewBox="0 0 240 90"><path d="M10 78 C 70 20, 120 90, 170 40 S 220 12, 230 10" /></svg>
+    <img src="icons/icon-192.png" alt="">
+    <b>公里及油資紀錄系統</b>
+    <small>MILEAGE &amp; FUEL ALLOWANCE · PRO</small>
+    <span class="spl-bar"><i></i></span>
+  </div>
+</div>
+<div class="shell">
+  <aside class="side" aria-label="側邊選單">
+    <div class="sbrand">
+      <img src="icons/icon-192.png" alt="">
+      <div><b>公里及油資紀錄</b><small><span class="pro">PRO</span> 企業版 · 公出補貼</small></div>
+    </div>
+    <nav id="sidenav" class="sidenav"></nav>
+    <div class="sfoot">
+      <div id="sideuser" class="sideuser" hidden></div>
+      <button class="cloudst off" data-act="cloudst"></button>
+      <small class="ver">Mileage &amp; Fuel Allowance System</small>
+    </div>
+  </aside>
+  <div class="mainwrap">
+    <header class="top">
+      <div class="mbrand m-only"><img src="icons/icon-192.png" alt=""><b>油資紀錄</b><span class="pro">PRO</span></div>
+      <div class="ttl d-only"><small id="crumb">公出補貼</small><h1 id="ptitle">總覽</h1></div>
+      <span class="sp"></span>
+      <div id="hdrinfo" class="hdrinfo d-only"></div>
+      <button class="cloudst off m-only" data-act="cloudst"></button>
+    </header>
+    <main id="app"><p class="empty">載入中…</p></main>
+    <nav id="botnav" class="botnav m-only"></nav>
+  </div>
+</div>
+<div id="upd" class="upd" role="status" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<script>setTimeout(function () { var s = document.getElementById('splash'); if (s) s.classList.add('out'); }, 6000);</script>
+<script src="config.js?v=3"></script>
+<script src="mileage.js?v=3"></script>
+<script src="xlsx.js?v=3"></script>
+<script src="app.js?v=3"></script>
+<script src="../auth.js?v=12"></script>
+<script src="../kitchen-nav.js?v=19"></script>
+</body>
+</html>

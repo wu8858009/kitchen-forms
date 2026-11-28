@@ -187,14 +187,14 @@
   let BG = false;
   try { BG = window.top !== window; } catch (e) { BG = true; }
   if (BG) {
-    const md = (location.pathname.match(/\/(fridge|prep|dish|meal|sop|equip|energy)\//) || [])[1];
+    const md = (location.pathname.match(/\/(fridge|prep|dish|meal|sop|equip|energy|taxid|mileage)\//) || [])[1];
     if (md && window.KitchenAuth && !window.KitchenAuth.can(md)) { location.replace('about:blank'); return; }
     applyCloudCfg(md, () => {}); // 背景也照首頁（管理者分發）的設定連上雲端
     if (md === 'equip') equipAuto();
     return;
   }
   // 權限：沒有這個系統權限（或還沒登入）就回首頁
-  const mod = (location.pathname.match(/\/(fridge|prep|dish|meal|sop|equip|energy)\//) || [])[1];
+  const mod = (location.pathname.match(/\/(fridge|prep|dish|meal|sop|equip|energy|taxid|mileage)\//) || [])[1];
   if (mod && window.KitchenAuth && !window.KitchenAuth.can(mod)) { location.replace(home); return; }
   // 開著的時候權限被取消、帳號被停用：存好資料再回首頁
   if (mod && window.KitchenAuth && window.KitchenAuth.on) {
@@ -225,7 +225,7 @@
   }
   // 各系統把還沒存的資料存好（回首頁、自動更新前都會用）
   async function saveAll() {
-    const m = window.__fridge || window.__dish || window.__meal || window.__prep;
+    const m = window.__fridge || window.__dish || window.__meal || window.__prep || window.__taxid || window.__mf;
     try { if (m && m.flush) await Promise.race([m.flush(), new Promise((r) => setTimeout(r, 3000))]); } catch (err) { /* 照樣回首頁 */ }
     if (mod === 'sop') { window.dispatchEvent(new Event('pagehide')); await new Promise((r) => setTimeout(r, 400)); } // SOP 收到 pagehide 會把還沒存的資料存好
     if (mod === 'equip' && window.SG && SG.db && SG.db.saveNow) { try { SG.db.saveNow(); } catch (err) { /* */ } await new Promise((r) => setTimeout(r, 300)); }

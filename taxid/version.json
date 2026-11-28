@@ -1,0 +1,8 @@
+{
+  "version": "1.4.1",
+  "notes": "手機版修正：iPhone 不再自動放大、搜尋列不被蓋住、大字統編不折行、手機可分享匯出 Excel",
+  "date": "2026-11-27",
+  "exe": "https://github.com/wu8858009/taxid-record/releases/download/v1.4.1/TaxIdRecord-1.4.1.exe",
+  "sha256": "46c0d688dd7d7d4a2b9cbaa11c3332c145a49e320137e5343e59f4afc2a17f36",
+  "size": 20881580
+}

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b2530">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="統編紀錄">
+<meta name="description" content="記錄公司統一編號與發票抬頭，自動驗證檢查碼、帶入公司名稱，一鍵複製">
+<title>統編紀錄系統 PRO</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="styles.css?v=6">
+</head>
+<body>
+<div class="shell">
+  <aside class="side" aria-label="側邊選單">
+    <div class="sbrand">
+      <img src="icons/icon-192.png" alt="">
+      <div><b>統編紀錄系統</b><small>PRO · 企業版</small></div>
+    </div>
+    <nav id="sidenav" class="sidenav"></nav>
+    <div class="sfoot">
+      <button class="cloudst" data-act="cloudst" hidden></button>
+      <button class="sbtn" data-act="tools" title="匯出 Excel、匯入、備份、批次更新、雲端同步">
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.6M12 18.6v2.6M4.2 7.4l2.2 1.3M17.6 15.3l2.2 1.3M4.2 16.6l2.2-1.3M17.6 8.7l2.2-1.3"/></svg>
+        <span>工具與設定</span></button>
+      <small class="ver">Taiwan Business ID Registry</small>
+    </div>
+  </aside>
+  <div class="mainwrap">
+    <header class="top">
+      <div class="mbrand m-only"><img src="icons/icon-192.png" alt=""><b>統編紀錄</b><span class="pro">PRO</span></div>
+      <div class="ttl d-only"><small>統編管理 ／ 總覽</small><h1>統一編號總覽</h1></div>
+      <span class="sp"></span>
+      <small id="count" class="count d-only"></small>
+      <div class="hact">
+        <button class="cloudst m-only" data-act="cloudst" hidden></button>
+        <button class="btn ghost m-only" data-act="tools" title="工具">☰</button>
+        <button class="btn primary" data-act="add" title="新增（Alt+N）">＋ 新增<span class="d-txt">統編</span></button>
+      </div>
+    </header>
+    <main id="app"><p class="empty">載入中…</p></main>
+  </div>
+</div>
+<div id="upd" class="upd" role="status" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<script src="config.js?v=6"></script>
+<script src="taxid.js?v=6"></script>
+<script src="xlsx.js?v=6"></script>
+<script src="barcode.js?v=6"></script>
+<script src="qrcode.js?v=6"></script>
+<script src="app.js?v=6"></script>
+<script src="../auth.js?v=12"></script>
+<script src="../kitchen-nav.js?v=19"></script>
+</body>
+</html>
